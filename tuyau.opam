@@ -1,0 +1,24 @@
+opam-version: "2.0"
+name:         "tuyau"
+maintainer:   "Romain Calascibetta <romain.calascibetta@gmail.com>"
+authors:      "Romain Calascibetta <romain.calascibetta@gmail.com>"
+homepage:     "https://github.com/mirage/tuyau"
+bug-reports:  "https://github.com/mirage/tuyau/issues"
+dev-repo:     "git+https://github.com/mirage/tuyau.git"
+doc:          "https://mirage.github.io/tuyau/"
+license:      "MIT"
+synopsis:     "Yet Another Conduit"
+description: """Yet Another Conduit"""
+
+build: [
+  [ "dune" "subst" ]
+  [ "dune" "build" "-p" name "-j" jobs ]
+  [ "dune" "runtest" "-p" name "-j" jobs ] {with-test}
+]
+
+depends: [
+  "ocaml"      {>= "4.03.0"}
+  "dune"       {build}
+  "rresult"
+  "fmt"
+]
