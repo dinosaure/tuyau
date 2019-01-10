@@ -1,16 +1,3 @@
-module type SERVICE = sig
-  type description
-  type endpoint
-  type from
-
-  type buffer
-  type +'a io
-
-  val init : description -> from -> endpoint -> endpoint io
-  val read : endpoint -> buffer -> int io
-  val write : endpoint -> buffer -> int io
-end
-
 module Make (IO : Sigs.IO) (B : Sigs.SINGLETON) = struct
   module Resolver = Resolver.Make(IO)
 
@@ -21,85 +8,98 @@ module Make (IO : Sigs.IO) (B : Sigs.SINGLETON) = struct
     ; port : int
     ; kind : kind }
 
-  type ('r, 'e) init = desc -> 'r -> 'e -> 'e IO.t
-  type 'e read = 'e -> B.t -> int IO.t
-  type 'e write = 'e -> B.t -> int IO.t
+  module type SERVICE = Sigs.SERVICE
+    with type description = desc
+     and type 'a io = 'a IO.t
+     and type buffer = B.t
+  module type FLOW = Sigs.FLOW
+    with type 'a io = 'a IO.t
+     and type buffer = B.t
 
-  type ('r, 'e) service =
+  type ('endpoint, 'flow) service =
     { desc : desc
-    ; init : ('r, 'e) init
-    ; rd : 'e read
-    ; wr : 'e write }
+    ; implementation : (module SERVICE with type endpoint = 'endpoint and type flow = 'flow) }
 
-  type 'e action =
-    { rd : 'e -> B.t -> int IO.t
-    ; wr : 'e -> B.t -> int IO.t }
-
-  module type SERVICE = SERVICE with type description = desc and type 'a io = 'a IO.t and type buffer = B.t
-
-  let of_module (type e r) ~name ~port ~kind
+  let of_module (type e f) ~name ~port ~kind
     (module Service : SERVICE with type endpoint = e
-                               and type from = r)
+                               and type flow = f)
     =
     { desc = { name; port; kind; }
-    ; init = Service.init
-    ; rd = Service.read
-    ; wr = Service.write }
-
-  module Service = struct type 'e t = B : 'r Resolver.resolver * ('r, 'e) service -> 'e t end
+    ; implementation = (module Service) }
 
   open E0
 
-  module Dispatch = Make(Service)
+  module Binding = struct type 'f t = B : 'e Resolver.resolver * ('e, 'f) service -> 'f t end
+  module Dispatch = Make(Binding)
 
-  type 'e scheme = 'e Dispatch.extension
+  type 'f scheme = 'f Dispatch.extension
 
-  let add
-    : type r e. r Resolver.resolver -> (r, e) service -> e scheme
+  let register
+    : type e f. e Resolver.resolver -> (e, f) service -> f scheme
     = fun resolver service ->
-      let value = Service.B (resolver, service) in
+      let value = Binding.B (resolver, service) in
       Dispatch.inj value
 
-  type endpoint = Dispatch.t
+  type flow = Dispatch.t
 
-  let endpoint : type e. e scheme -> e -> endpoint =
-    fun scheme endpoint ->
+  let flow : type f. f scheme -> f -> flow =
+    fun scheme flow ->
       let module Scheme = (val scheme) in
-      Scheme.T endpoint
+      Scheme.T flow
 
   let resolve
-    : type e. Domain_name.t -> Resolver.t -> e scheme -> endpoint -> endpoint option IO.t
-    = fun domain m scheme endpoint ->
-      match Dispatch.extract endpoint scheme with
-      | None -> IO.return None
-      | Some e ->
+    : type f. Domain_name.t -> Resolver.t -> f scheme -> flow -> (flow, [ `Unresolved | `Msg of string ]) result IO.t
+    = fun domain m scheme flow ->
+      match Dispatch.extract flow scheme with
+      | None ->
+        let module Scheme = (val scheme) in
+        let Binding.B (_, service0) = Scheme.instance in
+        let Dispatch.V (_, binding1) = Dispatch.prj flow in
+        let Binding.B (_, service1) = binding1 in
+        let err = Rresult.R.error_msgf "Invalid extraction from scheme %s and flow %s.\n%!"
+          service0.desc.name
+          service1.desc.name in
+        IO.return err
+      | Some flow ->
         let module Scheme = (val scheme) in
         let binding = Scheme.instance in
-        let Service.B (resolver, service) = binding in
+        let Binding.B (resolver, service) = binding in
         IO.bind (Resolver.resolve domain resolver m) @@ function
-        | None -> IO.return None
+        | None -> IO.return (Rresult.R.error `Unresolved)
         | Some v ->
-          IO.map (fun e -> Some (Scheme.T e)) (service.init service.desc v e)
+          let module Service = (val service.implementation) in
+          IO.map (function
+              | Ok flow -> Ok (Scheme.T flow)
+              | Error err -> Rresult.R.error_msgf "Initialization error: %a" Service.pp_error err)
+            (Service.init service.desc v flow)
 
-  let instance : type e a. e scheme -> (e action -> a) -> a
-    = fun scheme f ->
+  let extract : type f a. f scheme -> flow -> (f -> (module FLOW with type flow = f) -> a) -> (a, [ `Msg of string ]) result
+    = fun scheme flow f ->
       let module Scheme = (val scheme) in
-      let Service.B (_, service) = Scheme.instance in
-      f { rd= service.rd
-        ; wr= service.wr }
+      let Binding.B (_, service) = Scheme.instance in
+      let module Service = (val service.implementation) in
+      match Dispatch.extract flow scheme with
+      | Some flow -> Ok (f flow (module Service : FLOW with type flow = f))
+      | None ->
+        let Binding.B (_, service0) = Scheme.instance in
+        let Dispatch.V (_, binding1) = Dispatch.prj flow in
+        let Binding.B (_, service1) = binding1 in
+        Rresult.R.error_msgf "Invalid extraction from scheme %s and flow %s.\n%!"
+          service0.desc.name
+          service1.desc.name
 
-  let bind : type e. e scheme -> endpoint -> (e -> endpoint) -> endpoint option
-    = fun scheme endpoint f -> match Dispatch.extract endpoint scheme with
-      | Some e -> Some (f e)
+  let bind : type f. f scheme -> flow -> (f -> flow) -> flow option
+    = fun scheme flow f -> match Dispatch.extract flow scheme with
+      | Some flow -> Some (f flow)
       | None -> None
 
-  let return = endpoint
+  let return = flow
 
-  let map : type a b. a scheme -> b scheme -> endpoint -> (a -> b) -> endpoint option
-    = fun sx sy endpoint f -> match Dispatch.extract endpoint sx with
-      | Some e ->
+  let map : type a b. a scheme -> b scheme -> flow -> (a -> b) -> flow option
+    = fun sx sy flow f -> match Dispatch.extract flow sx with
+      | Some flow  ->
         let module Scheme = (val sy) in
-        let e = f e in
-        Some (Scheme.T e)
+        let flow = f flow in
+        Some (Scheme.T flow)
       | None -> None
 end

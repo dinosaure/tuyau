@@ -2,12 +2,12 @@ module Make (IO : Sigs.IO) (B : Sigs.SINGLETON): sig
   module Service : module type of Service.Make (IO) (B)
   module Resolver : module type of Service.Resolver
 
-  type 'e t
-  type 'e action = 'e Service.action
+  type 'f t
+  type 'f flow = (module Service.FLOW with type flow = 'f)
 
-  val make : name:string -> 'r Resolver.resolver -> ('r, 'e) Service.service -> 'e -> 'e t
-  val bind : 'e t -> ('e -> 'e t) -> 'e t
-  val map : 'e t -> ('e -> 'e) -> 'e t
-  val action : 'e t -> ('e action -> 'a IO.t) -> 'a IO.t
-  val resolve : Domain_name.t -> Resolver.t -> 'e t -> 'e t option IO.t
+  val register : name:string -> 'e Resolver.resolver -> ('e, 'f) Service.service -> 'f -> 'f t
+  val bind : 'f t -> ('f -> 'f t) -> 'f t
+  val map : 'f t -> ('f -> 'f) -> 'f t
+  val extract : 'f t -> ('f -> 'f flow -> 'a IO.t) -> ('a IO.t, [ `Msg of string ]) result
+  val resolve : Domain_name.t -> Resolver.t -> 'f t -> ('f t, [ `Unresolved | `Msg of string]) result IO.t
 end

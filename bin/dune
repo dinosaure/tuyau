@@ -1,3 +1,3 @@
 (executable
  (name tuyau_unix)
- (libraries unix tuyau))
+ (libraries unix ke tuyau))
