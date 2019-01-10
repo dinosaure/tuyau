@@ -132,11 +132,8 @@ let read_line
         | None -> loop flow in
     loop flow
 
-
 let handle_message
-  : type f. (module Service.FLOW with type flow = f)
-    -> f
-    -> unit
+  : type f. f flow -> f -> unit
   = fun (module Flow) flow ->
   let read_line = read_line (module Flow) in
 
