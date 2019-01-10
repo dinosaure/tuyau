@@ -14,13 +14,17 @@ end
 module High = Tuyau.High.Make (Noop) (Bytes)
 open High
 
+type socket =
+  { socket : Unix.file_descr
+  ; chunk : int }
+
 module Server
   : Service.SERVICE with type endpoint = Unix.inet_addr
-                     and type flow = Unix.file_descr
+                     and type flow = socket
 = struct
   type description = Service.desc
   type endpoint = Unix.inet_addr
-  type flow = Unix.file_descr
+  type flow = socket
 
   type buffer = Bytes.t
   type +'a io = 'a Noop.t
@@ -31,18 +35,18 @@ module Server
   let pp_error _ `Never = assert false
   let pp_write_error _ `Never = assert false
 
-  let init desc inet_addr fd =
+  let init desc inet_addr socket =
     Fmt.pr "Server start to listen.\n%!" ;
-    Unix.bind fd (Unix.ADDR_INET (inet_addr, desc.Service.port)) ;
-    Unix.listen fd 40 ; Ok fd
+    Unix.bind socket.socket (Unix.ADDR_INET (inet_addr, desc.Service.port)) ;
+    Unix.listen socket.socket 40 (* get it from [inet_addr] or [socket]? *) ; Ok socket
 
-  let read fd =
-    let bytes = Bytes.create 0x100 in
-    let n = Unix.read fd bytes 0 (Bytes.length bytes) in
+  let read { socket; chunk; } =
+    let bytes = Bytes.create chunk in
+    let n = Unix.read socket bytes 0 (Bytes.length bytes) in
     if n = 0 then Ok `Eoi else Ok (`Data (Bytes.sub bytes 0 n))
 
-  let write fd bytes = let n = Unix.write fd bytes 0 (Bytes.length bytes) in Ok n
-  let close fd = let () = Unix.close fd in Ok ()
+  let write { socket; _ } bytes = let n = Unix.write socket bytes 0 (Bytes.length bytes) in Ok n
+  let close { socket; _ } = let () = Unix.close socket in Ok ()
 end
 
 module Client
@@ -168,15 +172,17 @@ let sockaddr_resolver : Unix.sockaddr Resolver.resolver = Resolver.make ~name:"s
 let resolvers = Resolver.add inet_addr_resolver ~resolve:gethostbyname Resolver.empty
 let resolvers = Resolver.add sockaddr_resolver ~resolve:getaddrinfo resolvers
 
-let handle_connection action conn =
+let handle_connection ~chunk impl conn =
   let fd, _ = conn in
-  handle_message action fd
+  (* XXX(dinosaure): this line proves that we know everything between [impl] and
+     [socket]. We are able to use it, construct it and so on. *)
+  handle_message impl { chunk; socket= fd }
 
 let server t =
-  High.extract t (* extract action *) @@ fun master impl ->
+  High.extract t (* extract action *) @@ fun ({ socket; chunk; } as master) impl ->
   let rec loop : unit -> unit = fun () ->
-    let conn = Unix.accept master in
-    let () = handle_connection impl conn in
+    let conn = Unix.accept socket in
+    let () = handle_connection ~chunk impl conn in
     loop () in
   loop () ; master
 
@@ -212,7 +218,8 @@ let run_client_on flow domain =
 let () = Sys.catch_break true
 
 let () =
-  let server = Unix.socket Unix.PF_INET SOCK_STREAM 0 in
+  let server = { socket= Unix.socket Unix.PF_INET SOCK_STREAM 0
+               ; chunk = 0x100 } in
   let client = Unix.socket Unix.PF_INET SOCK_STREAM 0 in
 
   try
@@ -222,5 +229,5 @@ let () =
     | 0 -> Unix.sleep 1 ; let _ = run_client_on client domain in ()
     | _ -> let _ = run_server_on server domain in ()
   with Sys.Break ->
-    Unix.close server ;
+    Unix.close server.socket ;
     Unix.close client
