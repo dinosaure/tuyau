@@ -26,10 +26,14 @@ let eq : type a b. a t -> b t -> (a, b) Refl.t option =
     | B.T -> Some Refl.Refl
     | _ -> None
 
+type identifier = int
+let identifier_equal a b = (compare : int -> int -> int) a b = 0
+let identifier_compare a b = (compare : int -> int -> int) a b
+
 module Make (K : Sigs.FUNCTOR) (V : Sigs.FUNCTOR) = struct
   module Key = struct
     type 'a info = 'a K.t
-    type 'a key = { uid : int; tid : 'a t; info : 'a K.t }
+    type 'a key = { uid : identifier; tid : 'a t; info : 'a K.t }
 
     let uid =
       let x = ref (-1) in
@@ -41,6 +45,7 @@ module Make (K : Sigs.FUNCTOR) (V : Sigs.FUNCTOR) = struct
       { uid; tid; info; }
 
     let info { info; _ } = info
+    let identifier { uid; _ } = uid
 
     type t = K : 'a key -> t
 

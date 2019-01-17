@@ -1,3 +1,7 @@
+type identifier = private int
+val identifier_equal : identifier -> identifier -> bool
+val identifier_compare : identifier -> identifier -> int
+
 module Make (K : Sigs.FUNCTOR) (V : Sigs.FUNCTOR) : sig
   type 'a key
 
@@ -6,6 +10,7 @@ module Make (K : Sigs.FUNCTOR) (V : Sigs.FUNCTOR) : sig
 
     val create : 'a info -> 'a key
     val info : 'a key -> 'a info
+    val identifier : 'a key -> identifier
 
     type t
 
