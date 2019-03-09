@@ -1,3 +1,5 @@
+[@@@warning "-32-34"]
+
 module Make (IO : Sigs.IO) (B : Sigs.SINGLETON) = struct
   module Service = Service.Make (IO) (B)
   module Resolver = Resolver.Make (IO)
@@ -36,3 +38,39 @@ module Make (IO : Sigs.IO) (B : Sigs.SINGLETON) = struct
       | Error _ as err -> IO.return err
 end
 
+type endp =
+  [ `TCP of Ipaddr.t * int
+  | `Unix_domain_socket of string
+  | `Vchan_direct of int * string
+  | `Vchan_domain_socket of string * string
+  | `TLS of string * endp
+  | `Unknown of string
+  | `None ]
+
+type service =
+  { name : string
+  ; port : int
+  ; tls : bool }
+
+module Option = struct
+  type 'a t = 'a option
+
+  let map f = function
+    | Some x -> Some (f x)
+    | None -> None
+end
+
+module type LikeConduit = functor (IO : Sigs.IO) -> functor (B : Sigs.SINGLETON) -> sig
+  type t
+  type svc = service (* XXX(dinosaure): done on [resolver.mli]. *)
+  type rewrite_fn = svc -> Uri.t -> endp IO.t
+  type service_fn = string -> svc option IO.t
+  type +'a io = 'a IO.t
+
+  val (++) : service_fn -> service_fn -> service_fn
+  val init : ?service:service_fn -> ?rewrites:(string * rewrite_fn) list -> unit -> t
+  val add_rewrite : host:string -> f:rewrite_fn -> t -> unit
+  val set_service : f:service_fn -> t -> unit
+  val service : t -> service_fn
+  val resolve_uri : ?rewrites:(string * rewrite_fn) list -> uri:Uri.t -> t -> endp io
+end

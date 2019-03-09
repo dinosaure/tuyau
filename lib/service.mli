@@ -1,10 +1,18 @@
+type kind =
+  | UDP | TCP
+
+type service =
+  { name : string
+  ; port : int
+  ; kind : kind }
+
 module Make (IO : Sigs.IO) (B : Sigs.SINGLETON) : sig
   module Resolver : module type of Resolver.Make(IO)
 
-  type kind = UDP | TCP
-  (** Kind of ground protocol. *)
+  type nonrec kind = kind = UDP | TCP
+  (** Kind of ground protocols. *)
 
-  type desc =
+  type desc = service =
     { name : string
     ; port : int
     ; kind : kind }

@@ -10,12 +10,12 @@ module Make (IO : Sigs.IO) = struct
   end
 
   module type RESOLVER = Sigs.FUNCTOR
-    with type 'a t = Identifier.t list -> Domain_name.t -> 'a option IO.t
+    with type 'a t = Domain_name.t -> 'a option IO.t
 
   module Desc = struct type 'a t = { name : string } end
 
   module Resolver : RESOLVER = struct
-    type 'a t = Identifier.t list -> Domain_name.t -> 'a option IO.t
+    type 'a t = Domain_name.t -> 'a option IO.t
   end
 
   module Map = Make (Desc) (Resolver)
@@ -40,8 +40,8 @@ module Make (IO : Sigs.IO) = struct
     | None -> raise Not_found
 
   let resolve
-    : type v. ?colored:identifier list -> Domain_name.t -> v resolver -> Map.t -> v option IO.t
-    = fun ?(colored = []) domain key m -> match Map.find key m with
-      | Some resolver -> resolver colored domain
+    : type v. Domain_name.t -> v resolver -> Map.t -> v option IO.t
+    = fun domain key m -> match Map.find key m with
+      | Some resolver -> resolver domain
       | None -> return None
 end

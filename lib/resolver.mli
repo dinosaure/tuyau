@@ -28,7 +28,7 @@ module Make (IO : Sigs.IO) : sig
   val empty : t
   (** An empty map of key resolvers. *)
 
-  val add : 'v resolver -> resolve:(Identifier.t list -> Domain_name.t -> 'v option IO.t) -> t -> t
+  val add : 'v resolver -> resolve:(Domain_name.t -> 'v option IO.t) -> t -> t
   (** [add key impl t] returns a map containing the binding of [key] to [impl].
      If [key] was already bound in [t] to a value that is physically equal to
      [impl], [t] is returned unchanged. *)
@@ -37,10 +37,10 @@ module Make (IO : Sigs.IO) : sig
   (** [remove key t] returns a map containing the same bindings as [t], expect
      for [key] which is unbound in the returned map. *)
 
-  val get : 'v resolver -> t -> (Identifier.t list -> Domain_name.t -> 'v option IO.t)
+  val get : 'v resolver -> t -> (Domain_name.t -> 'v option IO.t)
   (** [get key t] returns the current binding of [key] in [t]. *)
 
-  val resolve : ?colored:Identifier.t list -> Domain_name.t -> 'v resolver -> t -> 'v option IO.t
+  val resolve : Domain_name.t -> 'v resolver -> t -> 'v option IO.t
   (** [resolve ~colored domain key t] tries to resolve [domain] with the binded
      resolver [key] with an already visited (colored) list of resolvers. *)
 end

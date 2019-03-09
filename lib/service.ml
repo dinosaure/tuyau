@@ -1,9 +1,17 @@
+type kind =
+  | UDP | TCP
+
+type service =
+  { name : string
+  ; port : int
+  ; kind : kind }
+
 module Make (IO : Sigs.IO) (B : Sigs.SINGLETON) = struct
   module Resolver = Resolver.Make(IO)
 
-  type kind = UDP | TCP
+  type nonrec kind = kind = UDP | TCP
 
-  type desc =
+  type desc = service =
     { name : string
     ; port : int
     ; kind : kind }
