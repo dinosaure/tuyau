@@ -41,6 +41,6 @@ module Make (IO : Sigs.IO) : sig
   (** [get key t] returns the current binding of [key] in [t]. *)
 
   val resolve : Domain_name.t -> 'v resolver -> t -> 'v option IO.t
-  (** [resolve ~colored domain key t] tries to resolve [domain] with the binded
-     resolver [key] with an already visited (colored) list of resolvers. *)
+  (** [resolve domain key t] tries to resolve [domain] with the binded resolver
+     [key]. *)
 end
