@@ -62,7 +62,7 @@ end
 
 module type LikeConduit = functor (IO : Sigs.IO) -> functor (B : Sigs.SINGLETON) -> sig
   type t
-  type svc = service (* XXX(dinosaure): done on [resolver.mli]. *)
+  type svc = Service.service
   type rewrite_fn = svc -> Uri.t -> endp IO.t
   type service_fn = string -> svc option IO.t
   type +'a io = 'a IO.t
