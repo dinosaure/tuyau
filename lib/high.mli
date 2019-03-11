@@ -25,6 +25,9 @@ module Make (IO : Sigs.IO) (B : Sigs.SINGLETON): sig
      results to the {!Sigs.SERVICE.make} function binded with [witness]. It
      returns an abstraction of the (hidden) value returned. *)
 
+  val witness : 'f t -> 'f Service.scheme
+  val flow : 'f t -> Service.flow option
+
   (** Convenience operators. *)
 
   val bind : 'f t -> ('f -> 'f t) -> 'f t
