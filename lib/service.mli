@@ -66,7 +66,26 @@ module Make (IO : Sigs.IO) (B : Sigs.SINGLETON) : sig
      binded resolver find a solution, {!SERVICE.make} is called
      to make a new [flow] with solution. *)
 
+  val compose : 'f scheme -> flow -> flow
+  (** [compose witness flow] wraps [flow] under [witness]. It returns flow (with
+     the same kind of [flow]). *)
+
   val extract : 'f scheme -> flow -> ('f -> (module FLOW with type flow = 'f) -> 'a) -> ('a, [ `Msg of string ]) result
+  (** [extract witness flow f] extracts something (['a]) from a binded [witness]
+     with [flow]. This function calls [f] with the real value of [flow]
+     (projected by [witness]) and implementation associated only if we can prove
+     that [flow] comes from [witness]. Otherwise, it returns an error. For
+     example, this snippet does not work:
+
+     {{ let scheme0 : int scheme = register ...
+        and scheme1 : int scheme = register ...
+
+      let flow1 = flow scheme1 0
+
+      extract scheme0 flow1 something }} *)
+
+  (** Convenience operators. *)
+
   val bind : 'f scheme -> flow -> ('f -> flow) -> flow option
   val map : 'a scheme -> 'b scheme -> flow -> ('a -> 'b) -> flow option
   val return : 'f scheme -> 'f -> flow

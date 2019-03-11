@@ -78,6 +78,8 @@ module Make (IO : Sigs.IO) (B : Sigs.SINGLETON) = struct
             | Error err -> Rresult.R.error_msgf "Initialization error: %a" Service.pp_error err)
           (Service.make service.desc v)
 
+  let compose _scheme _flow = assert false
+
   let extract : type f a. f scheme -> flow -> (f -> (module FLOW with type flow = f) -> a) -> (a, [ `Msg of string ]) result
     = fun scheme flow f ->
       let module Scheme = (val scheme) in

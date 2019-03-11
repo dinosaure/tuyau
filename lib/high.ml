@@ -38,7 +38,11 @@ module Make (IO : Sigs.IO) (B : Sigs.SINGLETON) = struct
   let extract : 'f t -> ('f -> 'f flow -> 'a IO.t) -> ('a IO.t, [ `Msg of string]) result =
     fun t f -> match t.flow with
       | Some flow -> Service.extract t.witness flow f
-      | None -> assert false (* [resolve] needs to be called at first. *)
+      | None ->
+        Fmt.invalid_arg "Kind of flow %s was not initialized \
+                         (you should resolve something before extracting something)"
+          t.name
+  (* [resolve] needs to be called at first. *)
 
   let resolve : Domain_name.t -> Resolver.t -> 'e t -> ('e t, [ `Unresolved | `Msg of string ]) result IO.t =
     fun domain resolver t ->
