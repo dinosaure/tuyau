@@ -38,5 +38,5 @@ module type SERVICE = sig
   include FLOW with type +'a io := 'a io
                 and type buffer := buffer
 
-  val init : description -> endpoint -> flow -> (flow, error) result io
+  val make : description -> endpoint -> (flow, error) result io
 end

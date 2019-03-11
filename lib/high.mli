@@ -5,7 +5,7 @@ module Make (IO : Sigs.IO) (B : Sigs.SINGLETON): sig
   type 'f t
   type 'f flow = (module Service.FLOW with type flow = 'f)
 
-  val register : name:string -> 'e Resolver.resolver -> ('e, 'f) Service.service -> 'f -> 'f t
+  val register : name:string -> 'e Resolver.resolver -> ('e, 'f) Service.service -> 'f t
   val bind : 'f t -> ('f -> 'f t) -> 'f t
   val map : 'f t -> ('f -> 'f) -> 'f t
   val extract : 'f t -> ('f -> 'f flow -> 'a IO.t) -> ('a IO.t, [ `Msg of string ]) result

@@ -57,11 +57,14 @@ module Make (IO : Sigs.IO) (B : Sigs.SINGLETON) : sig
   (** [flow witness flow] hides a physical value of a flow represented by
      [witness] to abstract type {!flow}. *)
 
-  val resolve : Domain_name.t -> Resolver.t -> 'f scheme -> flow -> (flow, [ `Unresolved | `Msg of string ]) result IO.t
-  (** [resolve domain resolvers witness flow] tries to resolve [domain] with
-     binded resolver to [witness] (see {!register}) available in [resolvers].
-     Then, iff binded resolver find a solution, {!SERVICE.init} is called with
-     unwrapped/unhidden [flow] with solution. *)
+  val service_of_scheme : 'f scheme -> desc
+  (** [service_of_schemes] gives the description of the scheme. *)
+
+  val resolve : Domain_name.t -> Resolver.t -> 'f scheme -> (flow, [ `Unresolved | `Msg of string ]) result IO.t
+  (** [resolve domain resolvers witness] tries to resolve [domain] with binded
+     resolver to [witness] (see {!register}) available in [resolvers]. Then, iff
+     binded resolver find a solution, {!SERVICE.make} is called
+     to make a new [flow] with solution. *)
 
   val extract : 'f scheme -> flow -> ('f -> (module FLOW with type flow = 'f) -> 'a) -> ('a, [ `Msg of string ]) result
   val bind : 'f scheme -> flow -> ('f -> flow) -> flow option

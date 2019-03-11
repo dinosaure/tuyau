@@ -55,7 +55,9 @@ module Server
      you which port the service binded to this implementation you should use and
      some stuffs - like it's over TCP or UDP and the name of the service. *)
 
-  let init desc inet_addr socket =
+  let make desc inet_addr =
+    let socket = { socket= Unix.socket Unix.PF_INET SOCK_STREAM 0
+                 ; chunk = 0x100 } in
     Fmt.pr "Server start to listen.\n%!" ;
     Unix.bind socket.socket (Unix.ADDR_INET (inet_addr, desc.Service.port)) ;
     Unix.listen socket.socket 40 (* get it from [inet_addr] or [socket]? *) ; Ok socket
@@ -97,8 +99,9 @@ module Client
     | Unix.ADDR_UNIX service -> Fmt.pf ppf "<%s>" service
     | Unix.ADDR_INET (inet_addr, port) -> Fmt.pf ppf "%a:%d" pp_inet_addr inet_addr port
 
-  let init desc sockaddr fd =
+  let make desc sockaddr =
     Fmt.pr "Client start to connect to %a.\n%!" pp_sockaddr sockaddr ;
+    let fd = Unix.socket Unix.PF_INET SOCK_STREAM 0 in
     let with_port = function
       | Unix.ADDR_UNIX _ as v -> v
       | Unix.ADDR_INET (inet_addr, _) -> Unix.ADDR_INET (inet_addr, desc.Service.port) in
@@ -119,8 +122,8 @@ end
 
    The point is: two service can have the same implementation. *)
 
-let echo_service = Service.of_module ~name:"echo" ~port:8080 ~kind:Service.TCP (module Server)
-let client_service = Service.of_module ~name:"client echo" ~port:8080 ~kind:Service.TCP (module Client)
+let echo_service = Service.of_module ~name:"echo" ~port:8090 ~kind:Service.TCP (module Server)
+let client_service = Service.of_module ~name:"client echo" ~port:8090 ~kind:Service.TCP (module Client)
 
 (* Boilerpart, implementation of the f*cking unsafe [read_line]. *)
 
@@ -278,7 +281,7 @@ let sockaddr_resolver : Unix.sockaddr Resolver.resolver = Resolver.make ~name:"s
 let resolvers = Resolver.add inet_addr_resolver ~resolve:gethostbyname Resolver.empty
 let resolvers = Resolver.add sockaddr_resolver ~resolve:getaddrinfo resolvers
 
-let run_server_on flow domain =
+let run_server_on domain =
 
   (* The most complex part with a side-effect too (like [Resolver.make]). We
      will register an new service which is branched with [inet_addr_resolver].
@@ -299,7 +302,7 @@ let run_server_on flow domain =
 
      This function return an abstract type [socket High.t]. *)
 
-  let t = High.register ~name:"my echo server" inet_addr_resolver echo_service flow in
+  let t = High.register ~name:"my echo server" inet_addr_resolver echo_service in
 
   (* And we resolve! What happen here? So if you remember, we describe a bucket
      of resolvers on [resolvers] - which contains at least [inet_addr_resolver]
@@ -326,7 +329,7 @@ let run_server_on flow domain =
   | Error `Unresolved -> Fmt.invalid_arg "Unresolved domain %a.\n%!" Domain_name.pp domain
   | Error (`Msg err) -> Fmt.invalid_arg "Error: %s.\n%!" err
 
-let run_client_on flow domain =
+let run_client_on domain =
 
   (* Exactly the same logic on the client which will use [connect] (see
      [Client.init]) than [bind]. Again, resolution of the domain, we get a
@@ -335,7 +338,7 @@ let run_client_on flow domain =
      Then, the [Unix.file_descr] is ready to read and write something and we can
      apply the client echo logic. *)
 
-  let t = High.register ~name:"my echo client" sockaddr_resolver client_service flow in
+  let t = High.register ~name:"my echo client" sockaddr_resolver client_service in
   match High.resolve domain resolvers t with
   | Ok t -> client t
   | Error `Unresolved -> Fmt.invalid_arg "Unresolved domain %a.\n%!" Domain_name.pp domain
@@ -353,16 +356,10 @@ let () =
      [run_client_on] but I decide to move these variable on top to apply
      [Unix.close] if we get a [Ctrl-C]. Bref, voilà voilà! *)
 
-  let server = { socket= Unix.socket Unix.PF_INET SOCK_STREAM 0
-               ; chunk = 0x100 } in
-  let client = Unix.socket Unix.PF_INET SOCK_STREAM 0 in
-
   try
     let domain = Domain_name.of_string_exn "localhost" in
 
     match Unix.fork () with
-    | 0 -> Unix.sleep 1 ; let _ = run_client_on client domain in ()
-    | _ -> let _ = run_server_on server domain in ()
-  with Sys.Break ->
-    Unix.close server.socket ;
-    Unix.close client
+    | 0 -> Unix.sleep 1 ; let _ = run_client_on domain in ()
+    | _ -> let _ = run_server_on domain in ()
+  with Sys.Break -> invalid_arg "You need to wait 5min."

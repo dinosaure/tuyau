@@ -55,31 +55,28 @@ module Make (IO : Sigs.IO) (B : Sigs.SINGLETON) = struct
       let module Scheme = (val scheme) in
       Scheme.T flow
 
+  let service_of_scheme
+    : type f. f scheme -> desc
+    = fun scheme ->
+    let module Scheme = (val scheme) in
+    let binding = Scheme.instance in
+    let Binding.B (_, service) = binding in
+    service.desc
+
   let resolve
-    : type f. Domain_name.t -> Resolver.t -> f scheme -> flow -> (flow, [ `Unresolved | `Msg of string ]) result IO.t
-    = fun domain m scheme flow ->
-      match Dispatch.extract flow scheme with
-      | None ->
-        let module Scheme = (val scheme) in
-        let Binding.B (_, service0) = Scheme.instance in
-        let Dispatch.V (_, binding1) = Dispatch.prj flow in
-        let Binding.B (_, service1) = binding1 in
-        let err = Rresult.R.error_msgf "Invalid extraction from scheme %s and flow %s.\n%!"
-          service0.desc.name
-          service1.desc.name in
-        IO.return err
-      | Some flow ->
-        let module Scheme = (val scheme) in
-        let binding = Scheme.instance in
-        let Binding.B (resolver, service) = binding in
-        IO.bind (Resolver.resolve domain resolver m) @@ function
-        | None -> IO.return (Rresult.R.error `Unresolved)
-        | Some v ->
-          let module Service = (val service.implementation) in
-          IO.map (function
-              | Ok flow -> Ok (Scheme.T flow)
-              | Error err -> Rresult.R.error_msgf "Initialization error: %a" Service.pp_error err)
-            (Service.init service.desc v flow)
+    : type f. Domain_name.t -> Resolver.t -> f scheme -> (flow, [ `Unresolved | `Msg of string ]) result IO.t
+    = fun domain m scheme ->
+      let module Scheme = (val scheme) in
+      let binding = Scheme.instance in
+      let Binding.B (resolver, service) = binding in
+      IO.bind (Resolver.resolve domain resolver m) @@ function
+      | None -> IO.return (Rresult.R.error `Unresolved)
+      | Some v ->
+        let module Service = (val service.implementation) in
+        IO.map (function
+            | Ok flow -> Ok (Scheme.T flow)
+            | Error err -> Rresult.R.error_msgf "Initialization error: %a" Service.pp_error err)
+          (Service.make service.desc v)
 
   let extract : type f a. f scheme -> flow -> (f -> (module FLOW with type flow = f) -> a) -> (a, [ `Msg of string ]) result
     = fun scheme flow f ->
