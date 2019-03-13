@@ -39,6 +39,15 @@ module Make (IO : Sigs.IO) = struct
     | Some v -> v
     | None -> raise Not_found
 
+  let map ~name k f t =
+    let resolve = get k t in
+    let resolve domain =
+      let open IO in resolve domain >>= function
+      | Some x -> IO.return (Some (f x))
+      | None -> IO.return None in
+    let k' = make ~name in
+    add k' ~resolve t
+
   let resolve
     : type v. Domain_name.t -> v resolver -> Map.t -> v option IO.t
     = fun domain key m -> match Map.find key m with

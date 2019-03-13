@@ -28,6 +28,9 @@ module Make (IO : Sigs.IO) : sig
   val empty : t
   (** An empty map of key resolvers. *)
 
+  val map : name:string -> 'a resolver -> ('a -> 'b) -> t -> t
+  (** [map k f t] makes a new resolver from one other using [f] in [t].*)
+
   val add : 'v resolver -> resolve:(Domain_name.t -> 'v option IO.t) -> t -> t
   (** [add key impl t] returns a map containing the binding of [key] to [impl].
      If [key] was already bound in [t] to a value that is physically equal to
