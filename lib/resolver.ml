@@ -48,6 +48,25 @@ module Make (IO : Sigs.IO) = struct
     let k' = make ~name in
     add k' ~resolve t
 
+  exception Break
+
+  let of_array ~name arr t =
+    let resolve domain =
+      let res = ref None in
+      try Array.iter (fun (domain', v) -> if Domain_name.equal domain domain' then ( res := Some v ; raise Break ) ) arr
+        ; IO.return None
+      with Break -> IO.return !res in
+    let k = make ~name in
+    add k ~resolve t
+
+  let of_hashtbl ~name hashtbl t =
+    let resolve domain =
+      match Hashtbl.find hashtbl domain with
+      | v -> IO.return (Some v)
+      | exception Not_found -> IO.return None in
+    let k = make ~name in
+    add k ~resolve t
+
   let resolve
     : type v. Domain_name.t -> v resolver -> Map.t -> v option IO.t
     = fun domain key m -> match Map.find key m with
