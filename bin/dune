@@ -1,9 +1,0 @@
-(executable
- (name tuyau_unix)
- (modules tuyau_unix)
- (libraries unix ke tuyau))
-
-(executable
- (name with_conduit)
- (modules with_conduit)
- (libraries unix ipaddr.unix ke tuyau))
