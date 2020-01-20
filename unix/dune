@@ -1,0 +1,11 @@
+(library
+ (name tuyau_unix)
+ (public_name tuyau.unix)
+ (modules tuyau_unix)
+ (libraries unix tuyau))
+
+(library
+ (name tuyau_unix_tcp)
+ (public_name tuyau.unix.tcp)
+ (modules tuyau_unix_tcp)
+ (libraries digestif tuyau.unix))
