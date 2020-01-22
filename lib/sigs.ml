@@ -55,7 +55,7 @@ module type FLOW = sig
 
   val pp_error : error Fmt.t
 
-  val recv : flow -> input -> (input or_end_of_input, error) result s
+  val recv : flow -> input -> (int or_end_of_input, error) result s
   val send : flow -> output -> (int, error) result s
   val close : flow -> (unit, error) result s
 end
@@ -78,6 +78,7 @@ module type SERVICE = sig
 
   val pp_error : error Fmt.t
   val accept : t -> (flow, error) result s
+  val close : t -> (unit, error) result s
 end
 
 module type S = sig

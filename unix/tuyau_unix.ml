@@ -5,4 +5,4 @@ module Unix_scheduler = struct
   let return x = x
 end
 
-include Tuyau.Make(Unix_scheduler)(Bytes)(String)
+include Tuyau.Make(Unix_scheduler)(Cstruct)(Cstruct)

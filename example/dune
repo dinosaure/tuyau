@@ -1,3 +1,3 @@
 (executable
  (name tcp_and_tls)
- (libraries digestif.c bos fpath nocrypto.unix tuyau.unix tuyau.unix.tcp tuyau.tls))
+ (libraries logs.fmt bos fpath nocrypto.unix tuyau.unix tuyau.unix.tcp tuyau.tls))

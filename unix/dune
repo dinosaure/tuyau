@@ -2,7 +2,7 @@
  (name tuyau_unix)
  (public_name tuyau.unix)
  (modules tuyau_unix)
- (libraries unix tuyau))
+ (libraries cstruct unix tuyau))
 
 (library
  (name tuyau_unix_tcp)

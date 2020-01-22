@@ -1,54 +1,76 @@
-type tcp =
+type endpoint = Unix.sockaddr
+
+type protocol =
   { socket : Unix.file_descr
   ; sockaddr : Unix.sockaddr
+  ; linger : Bytes.t
   ; mutable closed : bool }
 
 module Tcp_protocol = struct
-  type input = Bytes.t
-  type output = String.t
+  type input = Tuyau_unix.input
+  type output = Tuyau_unix.output
   type +'a s = 'a Tuyau_unix.s
 
   type error = Socket_closed
 
-  let pp_error ppf Socket_closed = Fmt.string ppf "Socket closed!"
+  let pp_error ppf Socket_closed = Fmt.string ppf "Socket closed"
 
-  type endpoint = Unix.sockaddr
+  type nonrec endpoint = endpoint
 
-  type flow = tcp =
+  type flow = protocol =
     { socket : Unix.file_descr
     ; sockaddr : Unix.sockaddr
+    ; linger : Bytes.t
     ; mutable closed : bool }
 
   let flow sockaddr =
     let socket = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
-    Unix.connect socket sockaddr ; Ok { socket; sockaddr; closed= false; }
+    let linger = Bytes.create 0x1000 in
+    Unix.connect socket sockaddr ; Ok { socket; linger; sockaddr; closed= false; }
 
-  let rec recv ({ socket; closed; _ } as t) buf =
+  let rec recv ({ socket; closed; _ } as t) raw =
     if closed
     then Error Socket_closed
     else
-      ( Fmt.epr "<- recv.\n%!"
-      ; try let n = Unix.read socket buf 0 (Bytes.length buf) in
-        if n = 0 then Ok `End_of_input
-        else ( let buf = Bytes.sub buf 0 n in
-               let uid = Digestif.SHA1.digest_bytes buf in
-               Fmt.epr "<- recv (%a).\n%!" Digestif.SHA1.pp uid ;
-               Ok (`Input buf) )
-      with Unix.(Unix_error ((EAGAIN | EWOULDBLOCK), _, _)) -> recv t buf
-         | Unix.(Unix_error (EINTR, _, _)) -> recv t buf )
+      try
+        let max = Cstruct.len raw in
+        let len = Unix.read socket t.linger 0 (min max (Bytes.length t.linger)) in
+        if len = 0 then Ok `End_of_input
+        else ( Cstruct.blit_from_bytes t.linger 0 raw 0 len
+             ; if len = Bytes.length t.linger && max > Bytes.length t.linger
+               then
+                 (* XXX(dinosaure): [raw] can be bigger than [t.linger]. In this case,
+                    we should check if [socket] has pending data and fill the rest of [raw] then.
+                    [Unix.select] should not wait with [0.]. *)
+                 let (rd, _, _) = Unix.select [ socket ] [] [] 0. in
+                 if List.length rd = 0
+                 then Ok (`Input len)
+                 else
+                   let open Rresult in
+                   recv t (Cstruct.shift raw len) >>= function
+                   | `End_of_input -> t.closed <- true ; Ok (`Input len)
+                   | `Input rest -> Ok (`Input (len + rest))
+               else Ok (`Input len) )
+      with Unix.(Unix_error ((EAGAIN | EWOULDBLOCK), _, _)) -> recv t raw
+         | Unix.(Unix_error (EINTR, _, _)) -> recv t raw
 
-  let rec send ({ socket; closed; _ } as t) str =
+  let rec send ({ socket; closed; _ } as t) raw =
     if closed
     then Error Socket_closed
     else
-      ( let uid = Digestif.SHA1.digest_string str in
-        Fmt.epr "-> send (%a).\n%!" Digestif.SHA1.pp uid ;
-      try let n = Unix.write socket (Bytes.unsafe_of_string str) 0 (String.length str) in
-        Ok n
-      with Unix.(Unix_error ((EAGAIN | EWOULDBLOCK), _, _)) -> send t str
-         | Unix.(Unix_error (EINTR, _, _)) -> send t str
+      let max = Cstruct.len raw in
+      let len0 = min (Bytes.length t.linger) max in
+      Cstruct.blit_to_bytes raw 0 t.linger 0 len0 ;
+      try let len1 = Unix.write socket t.linger 0 len0 in
+        if len1 = len0
+        then if max > len0
+          then send t (Cstruct.sub raw len0 (max - len0))
+          else Ok max
+        else Ok len1
+      with Unix.(Unix_error ((EAGAIN | EWOULDBLOCK), _, _)) -> send t raw
+         | Unix.(Unix_error (EINTR, _, _)) -> send t raw
          | Unix.(Unix_error (EPIPE, _, _)) ->
-           t.closed <- true ; Error Socket_closed )
+           t.closed <- true ; Error Socket_closed
 
   let rec close t =
     try
@@ -58,18 +80,18 @@ module Tcp_protocol = struct
     with Unix.(Unix_error (EINTR, _, _)) -> close t
 end
 
-let sockaddr
-  : Unix.sockaddr Tuyau_unix.key
+let endpoint
+  : endpoint Tuyau_unix.key
   = Tuyau_unix.key ~name:"tcp-unix"
 
-let tcp_protocol = Tuyau_unix.register_protocol ~key:sockaddr ~protocol:(module Tcp_protocol)
+let protocol = Tuyau_unix.register_protocol ~key:endpoint ~protocol:(module Tcp_protocol)
 
 type configuration =
   { inet_addr : Unix.inet_addr
   ; port : int
   ; capacity : int }
 
-type master = Unix.file_descr
+type service = Unix.file_descr
 
 module Tcp_service = struct
   type +'a s = 'a Tuyau_unix.s
@@ -83,12 +105,15 @@ module Tcp_service = struct
     ; port : int
     ; capacity : int }
 
-  type t = master
+  type t = service
 
-  type flow = tcp =
+  type flow = protocol =
     { socket : Unix.file_descr
     ; sockaddr : Unix.sockaddr
+    ; linger : Bytes.t
     ; mutable closed : bool }
+
+  (* TODO(dinosaure): handle exception. *)
 
   let make { inet_addr; port; capacity; } =
     let socket = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
@@ -97,11 +122,15 @@ module Tcp_service = struct
 
   let accept master =
     let socket, sockaddr = Unix.accept master in
-    Ok { socket; sockaddr; closed= false; }
+    let linger = Bytes.create 0x1000 in
+    Ok { socket; sockaddr; linger; closed= false; }
+
+  let close master =
+    Unix.close master ; Ok ()
 end
 
 let configuration
   : configuration Tuyau_unix.key
   = Tuyau_unix.key ~name:"tcp-unix"
 
-let tcp_service = Tuyau_unix.register_service ~key:configuration ~service:(module Tcp_service) ~protocol:tcp_protocol
+let service = Tuyau_unix.register_service ~key:configuration ~service:(module Tcp_service) ~protocol:protocol

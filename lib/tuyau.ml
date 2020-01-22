@@ -63,7 +63,7 @@ module type S = sig
 
   type p
 
-  val lift : 'flow -> 'flow Witness.protocol -> (p, [> error ]) result s
+  val abstract : 'flow Witness.protocol -> 'flow -> flow
   val unlift : p -> flow
 
   val flow_of_endpoint : key:'edn key -> 'edn -> (p, [> error ]) result s
@@ -191,6 +191,8 @@ module Make
       let rec go = function
         | [] -> return (Error `Not_found)
         | Pt.Key (ctor, Protocol (k, (module Protocol))) :: r ->
+          (* TODO(dinosaure): I don't like [ctor] and we should be able
+             to have an access to [Protocol.T] instead. *)
           match Rs.Key.(key == k) with
           | None -> go r
           | Some E1.Refl.Refl ->
@@ -235,15 +237,16 @@ module Make
           | Error _err -> go r in
       go l
 
-  let lift
-    : type flow. flow -> flow Witness.protocol -> (p, [> error ]) result s
-    = fun flow (module P) ->
-      return (Ok (P.T flow))
-
   let unlift
     : p -> flow
     = fun w ->
       let Pt.Value (flow, Protocol (_, (module Protocol))) = Pt.prj w in
+      Flow (flow, (module Protocol))
+
+  let abstract
+    : type v. v Witness.protocol -> v -> flow
+    = fun (module P) flow ->
+      let Pt.Value (flow, Protocol (_, (module Protocol))) = Pt.prj (P.T flow) in
       Flow (flow, (module Protocol))
 
   let flow
@@ -264,7 +267,9 @@ module Make
           | [] -> return (Error `Not_found)
           | Endpoint (key, edn) :: r ->
             flow_of_protocol ~key edn ~protocol >>= function
-            | Ok flow -> lift flow protocol
+            | Ok flow ->
+              let module P = (val protocol) in
+              return (Ok (P.T flow))
             | Error _err -> go r in
         go l
       | Some key, Some protocol ->
@@ -272,7 +277,9 @@ module Make
         | None -> return (Error `Not_found)
         | Some (module Resolve) ->
           Resolve.resolve domain_name >>= function
-          | Some edn -> flow_of_protocol ~key edn ~protocol >>? fun flow -> lift flow protocol
+          | Some edn -> flow_of_protocol ~key edn ~protocol >>? fun flow ->
+            let module P = (val protocol) in
+            return (Ok (P.T flow))
           | None -> return (Error `Unresolved)
 
   let service

@@ -1,16 +1,17 @@
 open Tuyau_unix
 
-type tcp
+type endpoint = Unix.sockaddr
+type protocol
 
-val sockaddr : Unix.sockaddr key
-val tcp_protocol : tcp Witness.protocol
+val endpoint : endpoint key
+val protocol : protocol Witness.protocol
 
 type configuration =
   { inet_addr : Unix.inet_addr
   ; port : int
   ; capacity : int }
 
-type master
+type service
 
 val configuration : configuration key
-val tcp_service : (master * tcp) Witness.service
+val service : (service * protocol) Witness.service

@@ -21,19 +21,18 @@ module Strings_protocol = struct
   let recv flow buf =
     let max = Bytes.length buf in
     let rec go dst_off contents =
-      if dst_off = Bytes.length buf
-      then ( flow.input <- contents ; Ok (`Input buf) )
+      if dst_off = max
+      then ( flow.input <- contents ; Ok (`Input max) )
       else match contents with
         | [] ->
-          let buf = Bytes.sub buf 0 dst_off in
-          flow.input <- contents ; Ok (`Input buf)
+          flow.input <- contents ; Ok (`Input max)
         | x :: r ->
           let len = min (String.length x) (max - dst_off) in
           Bytes.blit_string x 0 buf dst_off len ;
           if len = String.length x
           then go (dst_off + len) r
           else ( flow.input <- String.sub x len (String.length x - len) :: r
-               ; Ok (`Input buf) ) in
+               ; Ok (`Input max) ) in
     match flow.input with
     | [] -> Ok `End_of_input
     | contents -> go 0 contents

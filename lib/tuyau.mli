@@ -72,7 +72,7 @@ module type S = sig
 
   type p
 
-  val lift : 'flow -> 'flow Witness.protocol -> (p, [> error ]) result s
+  val abstract : 'flow Witness.protocol -> 'flow -> flow
   val unlift : p -> flow
 
   val flow_of_endpoint : key:'edn key -> 'edn -> (p, [> error ]) result s
@@ -81,8 +81,18 @@ module type S = sig
 
   val service : key:'edn key -> 'edn -> service:('t * 'flow) Witness.service -> ('t * 'flow Witness.protocol, [> error ]) result s
 
-  val server : key:'edn key -> ('t * 'flow) Witness.service -> ((module S with type endpoint = 'edn and type t = 't and type flow = 'flow), [> error ]) result
-  val protocol : key:'edn key -> 'flow Witness.protocol -> ((module F with type endpoint = 'edn and type flow = 'flow), [> error ]) result
+  val server :
+    key:'edn key -> ('t * 'flow) Witness.service ->
+    ((module S with type endpoint = 'edn
+                and type t = 't
+                and type flow = 'flow),
+     [> error ]) result
+
+  val protocol :
+    key:'edn key -> 'flow Witness.protocol ->
+    ((module F with type endpoint = 'edn
+                and type flow = 'flow),
+     [> error ]) result
 end
 
 module Make

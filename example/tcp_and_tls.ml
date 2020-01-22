@@ -1,6 +1,11 @@
 module Tuyau_tls = Tuyau_tls.Make(Tuyau_unix.Unix_scheduler)(Tuyau_unix)
 
 let ( <.> ) f g = fun x -> f (g x)
+let reporter = Logs_fmt.reporter ()
+let () = Logs.set_reporter reporter
+let () = Logs.set_level ~all:true (Some Logs.Debug)
+
+(* TLS preamble. *)
 
 let () = Nocrypto_entropy_unix.initialize ()
 
@@ -31,8 +36,21 @@ let tls_config =
 
 open Tuyau_unix_tcp
 
-let sockaddr_and_tls, tcp_protocol_and_tls = Tuyau_tls.flow_with_tls ~key:sockaddr tcp_protocol
-let config_and_tls, tcp_service_and_tls = Tuyau_tls.service_with_tls ~key:configuration tcp_service tcp_protocol_and_tls
+(* [Tuyau_unix_tcp] provides 4 things:
+   - a [sockaddr] type witness to let the user to define a way
+     to resolve a [Domain_name.t] to give to use a [Unix.sockaddr]
+   - a [tcp_protocol] type witness which represents an implementation
+     of the TCP protocol
+   - a [configuration] type witness to let the user to _configure_
+     a TCP service (inet_addr and port, where we bind the server and capacity about [Unix.listen])
+   - a [tcp_service] type witness which serves TCP connection *)
+
+(* We do the composition between the implementation of the TCP protocol
+   and the TCP service. COMPOSITION!!! *)
+let sockaddr_and_tls, tcp_protocol_and_tls = Tuyau_tls.protocol_with_tls ~key:Tuyau_unix_tcp.endpoint Tuyau_unix_tcp.protocol
+let config_and_tls, tcp_service_and_tls = Tuyau_tls.service_with_tls ~key:configuration Tuyau_unix_tcp.service tcp_protocol_and_tls
+
+(* Usual configuration for a TCP server. *)
 
 let tcp_config =
   { inet_addr= Unix.inet_addr_any
@@ -43,20 +61,35 @@ let server () =
   let open Rresult in
   Tuyau_unix.service
     ~key:config_and_tls (tcp_config, tls_config)
-    ~service:tcp_service_and_tls >>= fun (master, w) ->
+    ~service:tcp_service_and_tls >>= fun (master, protocol) ->
+  (* - [master] is the master socket
+     - [w] is the type witness of the protocol *)
   Tuyau_unix.server ~key:config_and_tls tcp_service_and_tls >>= fun (module Server) ->
   let rec loop master =
+    (* for each [accept], we should start a thread to be able to
+       handle multiple connection. *)
     Server.accept master
     |> R.reword_error (fun err -> R.msgf "%a" Server.pp_error err)
-    >>= fun flow ->
-    Tuyau_unix.lift flow w >>| Tuyau_unix.unlift >>= fun (Tuyau_unix.Flow (socket, (module Flow))) ->
-    let buf = Bytes.create 0x1000 in
+    >>| Tuyau_unix.abstract protocol
+    >>= fun (Tuyau_unix.Flow (socket, (module Flow))) ->
+    (* at this stage, we can choose 2 ways to handle the given socket.
+       - we know, by types, that [flow : Tuyau_unix_tcp.tcpi flow_with_tls] and functions on it don't exist.
+         Currently, the type is abstracted. However, we can expose definition of it and, in this context,
+         directly uses functions associated by this type (like [read] and [write] - but they don't exist).
+       - we prefer to trust API provided by [w] (the type witness of the protocol) which handles correctly
+         TLS things correctly.
+
+       The idea behind all of that is to say that we can completely have something which is abstracted
+       and still be able to do the composition - and the user should not know anything about underlying
+       structures. But we can choose to expose the composition and internal structures and the user will be able
+       to tweak them then. *)
+    let raw = Cstruct.create 0x1000 in
     let rec go () =
-      Flow.recv socket buf >>= function
+      Flow.recv socket raw >>= function
       | `End_of_input ->
         Flow.close socket
-      | `Input buf ->
-        Flow.send socket (Bytes.to_string buf) >>= fun _len ->
+      | `Input len ->
+        Flow.send socket (Cstruct.sub raw 0 len) >>= fun _len ->
         go () in
     go () |> R.reword_error (fun err -> R.msgf "%a" Flow.pp_error err)
     >>= fun () -> loop master in
@@ -69,21 +102,25 @@ let resolver ~port domain =
   else
     let inet_addr = h_addr_list.(0) in
     let tls = Tls.Config.client ~authenticator:X509.Authenticator.null () in
-    Some (Unix.ADDR_INET (inet_addr, port), `As_client tls)
+    Some (Unix.ADDR_INET (inet_addr, port), tls)
 
 let client ?(port= 4242) domain_name =
   let resolvers = Tuyau_unix.register_resolver ~key:sockaddr_and_tls (resolver ~port) Tuyau_unix.Map.empty in
   let open Rresult in
   Tuyau_unix.flow resolvers domain_name >>= fun flow ->
   Tuyau_unix.unlift flow |> fun (Tuyau_unix.Flow (socket, (module Flow))) ->
+  let raw0 = Cstruct.create 0x1000 in
   let rec go () = match input_line stdin with
     | line ->
-      let buf = Bytes.create (String.length line) in
-      Flow.send socket line >>= fun _ ->
-      ( Flow.recv socket buf >>= function
+      let raw1 =
+        Cstruct.of_string
+          ~allocator:(fun len -> if len > Cstruct.len raw0 then Fmt.invalid_arg "Input line too long." ; Cstruct.sub raw0 0 len)
+          line in
+      Flow.send socket raw1 >>= fun _ ->
+      ( Flow.recv socket raw0 >>= function
       | `End_of_input -> Flow.close socket
-      | `Input buf ->
-        assert (Bytes.unsafe_to_string buf = line) ;
+      | `Input bytes ->
+        Fmt.epr "<~ %S.\n%!" Cstruct.(to_string (sub raw0 0 bytes)) ;
         go () )
     | exception End_of_file ->
       Flow.close socket in
