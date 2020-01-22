@@ -1,24 +1,20 @@
-module Make (K : Sigs.FUNCTOR) : sig
+module Make (Key : Sigs.FUNCTOR) : sig
   (* XXX(dinosaure): only on [>= 4.06.0] *)
   type t = private ..
 
-  module type Extension = sig
+  module type S = sig
     type x
     type t += T of x
 
-    val instance : x K.t
+    val witness : x Key.t
   end
 
-  type 'a extension = (module Extension with type x = 'a)
-  type instance = V : 'a * 'a K.t -> instance
+  type 'a s = (module S with type x = 'a)
+  type v = Value : 'a * 'a Key.t -> v
+  type k = Key : ('a -> t) * 'a Key.t -> k
 
-  module Injection (X : sig
-    type t
-
-    val instance : t K.t
-  end) : Extension with type x = X.t
-
-  val inj : 'a K.t -> 'a extension
-  val prj : t -> instance
-  val extract : t -> 'a extension -> 'a option
+  val inj : 'a Key.t -> 'a s
+  val prj : t -> v
+  val extract : t -> 'a s -> 'a option
+  val bindings : unit -> k list
 end

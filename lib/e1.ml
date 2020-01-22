@@ -52,6 +52,9 @@ module Make (K : Sigs.FUNCTOR) (V : Sigs.FUNCTOR) = struct
     let hide k = K k
     let equal (K a) (K b) = (compare : int -> int -> int) a.uid b.uid = 0
     let compare (K a) (K b) = (compare : int -> int -> int) a.uid b.uid
+    let (==)
+        : type a b. a key -> b key -> (a, b) Refl.t option
+        = fun a b -> eq a.tid b.tid
   end
 
   type 'a key = 'a Key.key
@@ -75,4 +78,12 @@ module Make (K : Sigs.FUNCTOR) (V : Sigs.FUNCTOR) = struct
        | Some Refl.Refl -> Some v
        | None -> None)
     | exception Not_found -> None
+
+  type v = Value : 'a key * 'a V.t -> v
+
+  let bindings m =
+    Map.bindings m |>
+    List.fold_left (fun a (Key.K k, B (k', v)) -> match eq k.Key.tid k'.Key.tid with
+        | Some Refl.Refl -> Value (k, v) :: a
+        | None -> a) []
 end

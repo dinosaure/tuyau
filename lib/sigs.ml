@@ -1,42 +1,98 @@
+type kind =
+  | UDP | TCP
+
+type description =
+  { name : string
+  ; port : int
+  ; kind : kind }
+
+type 'x or_end_of_input =
+  [ `End_of_input
+  | `Input of 'x ]
+
 module type FUNCTOR = sig type 'a t end
 module type SINGLETON = sig type t end
 
-module type IO = sig
+type (+'a, 's) app
+
+type 's scheduler =
+  { bind : 'a 'b. ('a, 's) app -> ('a -> ('b, 's) app) -> ('b, 's) app
+  ; return : 'a. 'a -> ('a, 's) app }
+
+module type BIJECTION = sig
+  type +'a s
+  type t
+
+  external inj : 'a s -> ('a, t) app = "%identity"
+  external prj : ('a, t) app -> 'a s = "%identity"
+end
+
+module Higher (Functor : sig type +'a t end)
+  : BIJECTION with type +'a s = 'a Functor.t
+= struct
+  type +'a s = 'a Functor.t
+  type t
+
+  external inj : 'a s -> ('a, t) app = "%identity"
+  external prj : ('a, t) app -> 'a s = "%identity"
+end
+
+module type SCHEDULER = sig
   type +'a t
 
   val bind : 'a t -> ('a -> 'b t) -> 'b t
-  val map : ('a -> 'b) -> 'a t -> 'b t
   val return : 'a -> 'a t
-
-  val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
-  val ( >|= ) : 'a t -> ('a -> 'b) -> 'b t
 end
 
-type 'a or_eoi = [ `Data of 'a | `Eoi ]
-
 module type FLOW = sig
-  type +'a io
+  type +'a s
+
   type flow
+
   type error
-  type write_error
-  type buffer
+
+  type input and output
 
   val pp_error : error Fmt.t
-  val pp_write_error : write_error Fmt.t
-  val read : flow -> (buffer or_eoi, error) result io
-  val write : flow -> buffer -> (int, write_error) result io
-  val close : flow -> (unit, error) result io
+
+  val recv : flow -> input -> (int or_end_of_input, error) result s
+  val send : flow -> output -> (int, error) result s
+  val close : flow -> (unit, error) result s
+end
+
+module type F = sig
+  include FLOW
+
+  type endpoint
+
+  val flow : endpoint -> (flow, error) result s
 end
 
 module type SERVICE = sig
-  type description
+  type +'a s
+
+  type flow
+  type t
+
+  type error
+
+  val pp_error : error Fmt.t
+  val accept : t -> (flow, error) result s
+  val close : t -> (unit, error) result s
+end
+
+module type S = sig
+  include SERVICE
+
   type endpoint
 
-  type buffer
-  type +'a io
+  val make : endpoint -> (t, error) result s
+end
 
-  include FLOW with type +'a io := 'a io
-                and type buffer := buffer
+module type RESOLVER = sig
+  type +'a s
 
-  val make : description -> endpoint -> (flow, error) result io
+  type endpoint
+
+  val resolve : [ `host ] Domain_name.t -> endpoint option s
 end

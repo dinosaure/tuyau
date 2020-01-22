@@ -1,0 +1,3 @@
+(executable
+ (name tcp_and_tls)
+ (libraries logs.fmt bos fpath nocrypto.unix tuyau.unix tuyau.unix.tcp tuyau.tls))

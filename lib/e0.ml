@@ -1,53 +1,58 @@
 (* (c) Frédéric Bour *)
 
-module Make (K : Sigs.FUNCTOR) = struct
+module Make (Key : Sigs.FUNCTOR) = struct
   type t = ..
 
-  module type Extension = sig
+  module type S = sig
     type x
     type t += T of x
 
-    val instance : x K.t
+    val witness : x Key.t
   end
 
-  type 'a extension = (module Extension with type x = 'a)
-  type instance = V : 'a * 'a K.t -> instance
+  type 'a s = (module S with type x = 'a)
+  type v = Value : 'a * 'a Key.t -> v
+  type k = Key : ('a -> t) * 'a Key.t -> k
 
   let handlers = Hashtbl.create 16
+  let witnesses = Hashtbl.create 16
 
   module Injection (X : sig
     type t
 
-    val instance : t K.t
-  end) : Extension with type x = X.t = struct
+    val witness : t Key.t
+  end) : S with type x = X.t = struct
     type x = X.t
     type t += T of x
 
-    let instance = X.instance
+    let witness = X.witness
 
     let () =
-      Hashtbl.add handlers
-        (Obj.extension_id [%extension_constructor T])
-        (function T x -> V (x, instance) | _ -> raise Not_found)
+      let uid = Stdlib.Obj.Extension_constructor.id [%extension_constructor T] in
+      Hashtbl.add handlers uid
+        (function T x -> Value (x, witness) | _ -> raise Not_found) ;
+      Hashtbl.add witnesses uid (Key ((fun x -> T x), witness))
   end
 
-  let inj (type a) (k : a K.t) : a extension =
+  let inj (type a) (k : a Key.t) : a s =
     ( module Injection (struct
       type t = a
 
-      let instance = k
+      let witness = k
     end) )
 
   let prj (t : t) =
     let rec go = function
       | [] -> assert false (* totality *)
-      | f :: r -> ( try f t with Not_found -> go r )
-    in
+      | f :: r -> ( try f t with Not_found -> go r ) in
     go
       (Hashtbl.find_all handlers
-         (Obj.extension_id (Obj.extension_constructor t)))
+         (Stdlib.Obj.Extension_constructor.id (Stdlib.Obj.Extension_constructor.of_val t)))
 
-  let extract (t : t) (type a) ((module E) : a extension) : a option = match t with
-    | E.T x -> Some x
+  let extract (t : t) (type a) ((module S) : a s) : a option = match t with
+    | S.T x -> Some x
     | _ -> None
+
+  let bindings : unit -> k list =
+    fun () -> Hashtbl.fold (fun _ v a -> v :: a) witnesses []
 end
