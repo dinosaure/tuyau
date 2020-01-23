@@ -61,14 +61,11 @@ module type S = sig
 
   val pp_error : error Fmt.t
 
-  type p
-
   val abstract : 'flow Witness.protocol -> 'flow -> flow
-  val unlift : p -> flow
 
-  val flow_of_endpoint : key:'edn key -> 'edn -> (p, [> error ]) result s
+  val flow_of_endpoint : key:'edn key -> 'edn -> (flow, [> error ]) result s
   val flow_of_protocol : key:'edn key -> 'edn -> protocol:'flow Witness.protocol -> ('flow, [> error ]) result s
-  val flow : Map.t -> ?key:'edn key -> ?protocol:'flow Witness.protocol -> [ `host ] Domain_name.t -> (p, [> error ]) result s
+  val flow : Map.t -> ?key:'edn key -> ?protocol:'flow Witness.protocol -> [ `host ] Domain_name.t -> (flow, [> error ]) result s
 
   val service : key:'edn key -> 'edn -> service:('t * 'flow) Witness.service -> ('t * 'flow Witness.protocol, [> error ]) result s
   val server : key:'edn key -> ('t * 'flow) Witness.service -> ((module S with type endpoint = 'edn and type t = 't and type flow = 'flow), [> error ]) result
@@ -183,21 +180,19 @@ module Make
     | `Unresolved -> Fmt.string ppf "Unresolved"
     | `Invalid_key -> Fmt.string ppf "Invalid key"
 
-  type p = Pt.t
-
   let flow_of_endpoint
-    : type edn. key:edn key -> edn -> (p, [> error ]) result s
+    : type edn. key:edn key -> edn -> (flow, [> error ]) result s
     = fun ~key edn ->
       let rec go = function
         | [] -> return (Error `Not_found)
-        | Pt.Key (ctor, Protocol (k, (module Protocol))) :: r ->
+        | Pt.Key (Protocol (k, (module Protocol))) :: r ->
           (* TODO(dinosaure): I don't like [ctor] and we should be able
              to have an access to [Protocol.T] instead. *)
           match Rs.Key.(key == k) with
           | None -> go r
           | Some E1.Refl.Refl ->
             Protocol.flow edn >>= function
-            | Ok flow -> return (Ok (ctor flow))
+            | Ok flow -> return (Ok (Flow (flow, (module Protocol))))
             | Error _err -> go r in
       go (Pt.bindings ())
 
@@ -226,7 +221,7 @@ module Make
       go [] (Rs.bindings m)
 
   let create
-    : Map.t -> [ `host ] Domain_name.t -> (p, [> error ]) result s
+    : Map.t -> [ `host ] Domain_name.t -> (flow, [> error ]) result s
     = fun m domain_name ->
       resolve m domain_name >>= fun l ->
       let rec go = function
@@ -237,12 +232,6 @@ module Make
           | Error _err -> go r in
       go l
 
-  let unlift
-    : p -> flow
-    = fun w ->
-      let Pt.Value (flow, Protocol (_, (module Protocol))) = Pt.prj w in
-      Flow (flow, (module Protocol))
-
   let abstract
     : type v. v Witness.protocol -> v -> flow
     = fun (module P) flow ->
@@ -250,7 +239,7 @@ module Make
       Flow (flow, (module Protocol))
 
   let flow
-    : type edn flow. Map.t -> ?key:edn key -> ?protocol:flow Witness.protocol -> [ `host ] Domain_name.t -> (p, [> error ]) result s
+    : type edn f. Map.t -> ?key:edn key -> ?protocol:f Witness.protocol -> [ `host ] Domain_name.t -> (flow, [> error ]) result s
     = fun m ?key ?protocol domain_name ->
       match key, protocol with
       | None, None -> create m domain_name
@@ -269,7 +258,8 @@ module Make
             flow_of_protocol ~key edn ~protocol >>= function
             | Ok flow ->
               let module P = (val protocol) in
-              return (Ok (P.T flow))
+              let Protocol (_, (module Protocol)) = P.witness in
+              return (Ok (Flow (flow, (module Protocol))))
             | Error _err -> go r in
         go l
       | Some key, Some protocol ->
@@ -279,7 +269,8 @@ module Make
           Resolve.resolve domain_name >>= function
           | Some edn -> flow_of_protocol ~key edn ~protocol >>? fun flow ->
             let module P = (val protocol) in
-            return (Ok (P.T flow))
+            let Protocol (_, (module Protocol)) = P.witness in
+            return (Ok (Flow (flow, (module Protocol))))
           | None -> return (Error `Unresolved)
 
   let service

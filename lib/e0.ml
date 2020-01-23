@@ -12,7 +12,7 @@ module Make (Key : Sigs.FUNCTOR) = struct
 
   type 'a s = (module S with type x = 'a)
   type v = Value : 'a * 'a Key.t -> v
-  type k = Key : ('a -> t) * 'a Key.t -> k
+  type k = Key : 'a Key.t -> k
 
   let handlers = Hashtbl.create 16
   let witnesses = Hashtbl.create 16
@@ -31,7 +31,7 @@ module Make (Key : Sigs.FUNCTOR) = struct
       let uid = Stdlib.Obj.Extension_constructor.id [%extension_constructor T] in
       Hashtbl.add handlers uid
         (function T x -> Value (x, witness) | _ -> raise Not_found) ;
-      Hashtbl.add witnesses uid (Key ((fun x -> T x), witness))
+      Hashtbl.add witnesses uid (Key witness)
   end
 
   let inj (type a) (k : a Key.t) : a s =

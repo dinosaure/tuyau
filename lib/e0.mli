@@ -11,7 +11,7 @@ module Make (Key : Sigs.FUNCTOR) : sig
 
   type 'a s = (module S with type x = 'a)
   type v = Value : 'a * 'a Key.t -> v
-  type k = Key : ('a -> t) * 'a Key.t -> k
+  type k = Key : 'a Key.t -> k
 
   val inj : 'a Key.t -> 'a s
   val prj : t -> v

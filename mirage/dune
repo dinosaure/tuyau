@@ -5,6 +5,12 @@
  (libraries cstruct lwt tuyau))
 
 (library
+ (name tuyau_mirage_tls)
+ (public_name tuyau.mirage.tls)
+ (modules tuyau_mirage_tls)
+ (libraries tuyau.mirage tuyau.tls))
+
+(library
  (name tuyau_mirage_tcp)
  (public_name tuyau.mirage.tcp)
  (modules tuyau_mirage_tcp)
