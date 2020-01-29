@@ -26,6 +26,8 @@ module Make (StackV4 : Mirage_stack.V4) = struct
     { flow : StackV4.TCPV4.flow
     ; queue : (char, Bigarray.int8_unsigned_elt) Ke.t }
 
+  let dst { flow; _ } = StackV4.TCPV4.dst flow
+
   type nonrec endpoint = (StackV4.t, Ipaddr.V4.t) endpoint
 
   module Protocol = struct
@@ -71,21 +73,24 @@ module Make (StackV4 : Mirage_stack.V4) = struct
         ( StackV4.TCPV4.read t.flow >|= R.reword_error error >>? function
         | `Eof -> Lwt.return (Ok `End_of_input)
         | `Data buf ->
-          Log.debug (fun m -> m "<- Got %d bytes." (Cstruct.len buf)) ;
-          let max_buf = Cstruct.len buf in
-          let max_raw = Cstruct.len raw in
-          if max_buf <= max_raw
-          then
-            ( Cstruct.blit buf 0 raw 0 max_buf
-            ; Lwt.return (Ok (`Input max_buf)) )
+          if Cstruct.len buf = 1 && Cstruct.get_char buf 0 = '\004'
+          then (StackV4.TCPV4.close t.flow >>= fun () -> Lwt.return (Ok `End_of_input))
           else
-            ( Cstruct.blit buf 0 raw 0 max_raw
-            ; let len = min (max_buf - max_raw) (Ke.available t.queue) in
-              Log.debug (fun m -> m "<- Save %d into the queue." len) 
-            ; let _ = Ke.N.push_exn ~blit ~length ~off:max_raw ~len t.queue buf in
-              if len = (max_buf - max_raw)
-              then Lwt.return (Ok (`Input max_raw))
-              else Lwt.return (Error Input_too_large) ) )
+            ( Log.debug (fun m -> m "<- Got %d bytes." (Cstruct.len buf)) ;
+              let max_buf = Cstruct.len buf in
+              let max_raw = Cstruct.len raw in
+              if max_buf <= max_raw
+              then
+                ( Cstruct.blit buf 0 raw 0 max_buf
+                ; Lwt.return (Ok (`Input max_buf)) )
+              else
+                ( Cstruct.blit buf 0 raw 0 max_raw
+                ; let len = min (max_buf - max_raw) (Ke.available t.queue) in
+                  Log.debug (fun m -> m "<- Save %d into the queue." len) 
+                ; let _ = Ke.N.push_exn ~blit ~length ~off:max_raw ~len t.queue buf in
+                  if len = (max_buf - max_raw)
+                  then Lwt.return (Ok (`Input max_raw))
+                  else Lwt.return (Error Input_too_large) ) ) )
       | lst ->
         let rec go consumed raw = function
           | [] ->
@@ -121,7 +126,7 @@ module Make (StackV4 : Mirage_stack.V4) = struct
 
   let endpoint
     : endpoint Tuyau_mirage.key
-    = Tuyau_mirage.key ~name:"mirage tcp endpoint"
+    = Tuyau_mirage.key "tcp-mirage"
 
   let protocol =
     Tuyau_mirage.register_protocol ~key:endpoint ~protocol:(module Protocol)
@@ -183,7 +188,7 @@ module Make (StackV4 : Mirage_stack.V4) = struct
 
   let configuration
     : configuration Tuyau_mirage.key
-    = Tuyau_mirage.key ~name:"tcp-mirage"
+    = Tuyau_mirage.key "tcp-mirage"
 
   let service =
     Tuyau_mirage.register_service

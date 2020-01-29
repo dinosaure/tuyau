@@ -44,5 +44,5 @@ module Strings_protocol = struct
   let close flow = flow.input <- [] ; Ok ()
 end
 
-let strings : string list Tuyau_caml.key = Tuyau_caml.key ~name:"strings"
+let strings : string list Tuyau_caml.key = Tuyau_caml.key "strings"
 let strings_protocol = Tuyau_caml.register_protocol ~key:strings ~protocol:(module Strings_protocol)

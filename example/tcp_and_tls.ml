@@ -59,12 +59,12 @@ let tcp_config =
 
 let server () =
   let open Rresult in
-  Tuyau_unix.service
+  Tuyau_unix.serve
     ~key:config_and_tls (tcp_config, tls_config)
     ~service:tcp_service_and_tls >>= fun (master, protocol) ->
   (* - [master] is the master socket
      - [w] is the type witness of the protocol *)
-  Tuyau_unix.server ~key:config_and_tls tcp_service_and_tls >>= fun (module Server) ->
+  Tuyau_unix.impl_of_service ~key:config_and_tls tcp_service_and_tls >>= fun (module Server) ->
   let rec loop master =
     (* for each [accept], we should start a thread to be able to
        handle multiple connection. *)

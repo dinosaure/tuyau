@@ -68,7 +68,9 @@ module type S = sig
     val len : t -> int
   end
 
-  val key : name:string -> 'edn key
+  val key : ?priority:int -> string -> 'edn key
+  val name_of_key : 'edn key -> string
+  val priority : 'edn key -> int
 
   val register_service : key:'edn key -> service:('edn, 't, 'flow) service -> protocol:'flow Witness.protocol -> ('t * 'flow) Witness.service
   (** [register_service ~key ~service ~protocol] creates a representation of a
@@ -143,23 +145,14 @@ module type S = sig
      {- [flow resolvers ~protocol domain_name] is [flow_of_protocol ~key:(key_of_protocol) ~protocol (Map.get key resolvers @@ domain_name)]}
      {- [flow resolvers domain_name] is {!Conduit}}} *)
 
-  val service : key:'edn key -> 'edn -> service:('t * 'flow) Witness.service -> ('t * 'flow Witness.protocol, [> error ]) result s
-  (** [service ~key edn ~service] initialize a service from [edn] according
+  val serve : key:'edn key -> 'edn -> service:('t * 'flow) Witness.service -> ('t * 'flow Witness.protocol, [> error ]) result s
+  (** [serve ~key edn ~service] initialize a service from [edn] according
      [service]. It gives the concrete value of the service ['t] and the protocol
      used to communicate with the {i client}. *)
 
-  val server :
-    key:'edn key -> ('t * 'flow) Witness.service ->
-    ((module S with type endpoint = 'edn
-                and type t = 't
-                and type flow = 'flow),
-     [> error ]) result
-
-  val protocol :
-    key:'edn key -> 'flow Witness.protocol ->
-    ((module F with type endpoint = 'edn
-                and type flow = 'flow),
-     [> error ]) result
+  val impl_of_service : key:'edn key -> ('t * 'flow) Witness.service -> ((module S with type endpoint = 'edn and type t = 't and type flow = 'flow), [> error ]) result
+  val impl_of_protocol : key:'edn key -> 'flow Witness.protocol -> ((module F with type endpoint = 'edn and type flow = 'flow), [> error ]) result
+  val impl_of_flow : 'flow Witness.protocol -> (module FLOW with type flow = 'flow)
 end
 
 module Make

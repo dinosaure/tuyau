@@ -82,7 +82,7 @@ end
 
 let endpoint
   : endpoint Tuyau_unix.key
-  = Tuyau_unix.key ~name:"tcp-unix"
+  = Tuyau_unix.key "tcp-unix"
 
 let protocol = Tuyau_unix.register_protocol ~key:endpoint ~protocol:(module Tcp_protocol)
 
@@ -131,6 +131,6 @@ end
 
 let configuration
   : configuration Tuyau_unix.key
-  = Tuyau_unix.key ~name:"tcp-unix"
+  = Tuyau_unix.key "tcp-unix"
 
 let service = Tuyau_unix.register_service ~key:configuration ~service:(module Tcp_service) ~protocol:protocol

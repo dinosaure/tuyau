@@ -224,10 +224,10 @@ module Make
   let protocol_with_tls
     : type edn flow. key:edn Tuyau.key -> flow Tuyau.Witness.protocol -> (edn * Tls.Config.client) Tuyau.key * flow protocol_with_tls Tuyau.Witness.protocol
     = fun ~key protocol ->
-      match Tuyau.protocol ~key protocol with
+      match Tuyau.impl_of_protocol ~key protocol with
       | Ok (module Flow) ->
         let module M = Make_protocol(Flow) in
-        let k = Tuyau.key ~name:"with_tls" in
+        let k = Tuyau.key (Fmt.strf "%s + tls" (Tuyau.name_of_key key)) in
         let p = Tuyau.register_protocol ~key:k ~protocol:(module M) in
         k, p
       | Error _ -> assert false
@@ -274,10 +274,10 @@ module Make
     : type edn t flow. key:edn Tuyau.key -> (t * flow) Tuyau.Witness.service -> flow protocol_with_tls Tuyau.Witness.protocol ->
       (edn * Tls.Config.server) Tuyau.key * (t service_with_tls * flow protocol_with_tls) Tuyau.Witness.service
     = fun ~key service protocol ->
-      match Tuyau.server ~key service with
+      match Tuyau.impl_of_service ~key service with
       | Ok (module Service) ->
         let module M = Make_server(Service) in
-        let k = Tuyau.key ~name:"with_tls" in
+        let k = Tuyau.key (Fmt.strf "%s + tls" (Tuyau.name_of_key key)) in
         let s = Tuyau.register_service ~key:k ~service:(module M) ~protocol in
         k, s
       | _ -> assert false

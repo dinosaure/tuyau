@@ -45,8 +45,8 @@ module Make
       { Tuyau_mirage_tcp.stack= stackv4
       ; keepalive= None
       ; port= 9090 } in
-    Tuyau_mirage.server ~key:tls_configuration tls_service >? fun (module Server) ->
-    Tuyau_mirage.service ~key:tls_configuration (conf, tls) ~service:tls_service >>? fun (t, protocol) ->
+    Tuyau_mirage.impl_of_service ~key:tls_configuration tls_service >? fun (module Server) ->
+    Tuyau_mirage.serve ~key:tls_configuration (conf, tls) ~service:tls_service >>? fun (t, protocol) ->
 
     let handle console flow () = f console flow >>= function
       | Ok () -> Lwt.return ()
@@ -61,8 +61,8 @@ module Make
       { Tuyau_mirage_tcp.stack= stackv4
       ; keepalive= None
       ; port= 8080 } in
-    Tuyau_mirage.server ~key:TCP.configuration TCP.service >? fun (module Server) ->
-    Tuyau_mirage.service ~key:TCP.configuration conf ~service:TCP.service >>? fun (t, protocol) ->
+    Tuyau_mirage.impl_of_service ~key:TCP.configuration TCP.service >? fun (module Server) ->
+    Tuyau_mirage.serve ~key:TCP.configuration conf ~service:TCP.service >>? fun (t, protocol) ->
 
     let handle console flow () = f console flow >>= function
       | Ok () -> Lwt.return ()
@@ -141,10 +141,10 @@ module Make
       { Tuyau_mirage_tcp.stack
       ; keepalive= None
       ; port } in
-    Tuyau_mirage.server ~key:tls_configuration tls_service >? fun (module Server) ->
-    Tuyau_mirage.service ~key:tls_configuration (conf, tls) ~service:tls_service >>? fun (t, protocol) ->
+    Tuyau_mirage.impl_of_service ~key:tls_configuration tls_service >? fun (module Server) ->
+    Tuyau_mirage.serve ~key:tls_configuration (conf, tls) ~service:tls_service >>? fun (t, protocol) ->
     let handle console (Tuyau_mirage.Flow (flow0, (module Flow0)) as f0) () =
-      ( Tuyau_mirage.flow resolvers server >|? (R.ok <.> Tuyau_mirage.unlift) >>? fun f1 ->
+      ( Tuyau_mirage.flow resolvers server >>? fun f1 ->
         pipe f0 f1 ) >>= function
       | Ok () -> Lwt.return ()
       | Error err ->

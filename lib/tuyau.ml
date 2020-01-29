@@ -51,7 +51,9 @@ module type S = sig
     val len : t -> int
   end
 
-  val key : name:string -> 'edn key
+  val key : ?priority:int -> string -> 'edn key
+  val name_of_key : 'edn key -> string
+  val priority : 'edn key -> int
 
   val register_service : key:'edn key -> service:('edn, 't, 'flow) service -> protocol:'flow Witness.protocol -> ('t * 'flow) Witness.service
   val register_protocol : key:'edn key -> protocol:('edn, 'flow) protocol -> 'flow Witness.protocol
@@ -67,9 +69,11 @@ module type S = sig
   val flow_of_protocol : key:'edn key -> 'edn -> protocol:'flow Witness.protocol -> ('flow, [> error ]) result s
   val flow : Map.t -> ?key:'edn key -> ?protocol:'flow Witness.protocol -> [ `host ] Domain_name.t -> (flow, [> error ]) result s
 
-  val service : key:'edn key -> 'edn -> service:('t * 'flow) Witness.service -> ('t * 'flow Witness.protocol, [> error ]) result s
-  val server : key:'edn key -> ('t * 'flow) Witness.service -> ((module S with type endpoint = 'edn and type t = 't and type flow = 'flow), [> error ]) result
-  val protocol : key:'edn key -> 'flow Witness.protocol -> ((module F with type endpoint = 'edn and type flow = 'flow), [> error ]) result
+  val serve : key:'edn key -> 'edn -> service:('t * 'flow) Witness.service -> ('t * 'flow Witness.protocol, [> error ]) result s
+
+  val impl_of_service : key:'edn key -> ('t * 'flow) Witness.service -> ((module S with type endpoint = 'edn and type t = 't and type flow = 'flow), [> error ]) result
+  val impl_of_protocol : key:'edn key -> 'flow Witness.protocol -> ((module F with type endpoint = 'edn and type flow = 'flow), [> error ]) result
+  val impl_of_flow : 'flow Witness.protocol -> (module FLOW with type flow = 'flow)
 end
 
 module Make
@@ -112,15 +116,16 @@ module Make
   module type RESOLVER = Sigs.RESOLVER
     with type +'a s = 'a s
 
+  type info = { priority : int; name : string; }
+
   module Rs = E1.Make
-      (struct type 'edn t = string end)
+      (struct type 'edn t = info end)
       (struct type 'edn t = (module RESOLVER with type endpoint = 'edn) end)
 
   module B = struct type 't t = Protocol : 'edn Rs.key * ('edn, 'flow) protocol -> 'flow t end
   module Pt = E0.Make (B)
   module A = struct type 't t = Service : 'edn Rs.key * ('edn, 't, 'flow) service * 'flow Pt.s -> ('t * 'flow) t end
   module Ss = E0.Make (A)
-
 
   type 'edn key = 'edn Rs.key
   type 'edn resolver = [ `host ] Domain_name.t -> 'edn option s
@@ -146,7 +151,9 @@ module Make
     | Ok x -> f x
     | Error err -> return (Error err)
 
-  let key ~name = Rs.Key.create name
+  let key ?(priority= 0) name = Rs.Key.create { priority; name; }
+  let name_of_key : type edn. edn key -> string = fun key -> (Rs.Key.info key).name
+  let priority : type edn. edn key -> int = fun key -> (Rs.Key.info key).priority
 
   let register_service
     : type edn t flow.
@@ -273,7 +280,7 @@ module Make
             return (Ok (Flow (flow, (module Protocol))))
           | None -> return (Error `Unresolved)
 
-  let service
+  let serve
     : type edn t flow. key:edn key -> edn -> service:(t * flow) Witness.service -> (t * flow Witness.protocol, [> error ]) result s
     = fun ~key edn ~service:(module S) ->
       let Service (k', (module Service), protocol) = S.witness in
@@ -286,7 +293,7 @@ module Make
         | Error err ->
           return (Rresult.R.error_msgf "%a" Service.pp_error err)
 
-  let server
+  let impl_of_service
     : type edn t flow. key:edn key -> (t * flow) Witness.service -> ((module S with type endpoint = edn and type t = t and type flow = flow), [> error ]) result
     = fun ~key (module S) ->
       let Service (k, (module Service), _) = S.witness in
@@ -294,11 +301,17 @@ module Make
       | Some E1.Refl.Refl -> Ok (module Service)
       | None -> Error `Invalid_key
 
-  let protocol
+  let impl_of_protocol
     : type edn flow. key:edn key -> flow Witness.protocol -> ((module F with type endpoint = edn and type flow = flow), [> error ]) result
     = fun ~key (module P) ->
       let Protocol (k, (module Protocol)) = P.witness in
       match Rs.Key.(key == k) with
       | Some E1.Refl.Refl -> Ok (module Protocol)
       | None -> Error `Invalid_key
+
+  let impl_of_flow
+    : type flow. flow Witness.protocol -> (module FLOW with type flow = flow)
+    = fun (module P) ->
+      let Protocol (_, (module Protocol)) = P.witness in
+      (module Protocol)
 end
