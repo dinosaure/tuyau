@@ -2,6 +2,8 @@ open Tuyau_mirage
 
 type 'flow protocol_with_tls
 
+val underlying : 'flow protocol_with_tls -> 'flow
+
 val protocol_with_tls :
   key:'edn key ->
   'flow Witness.protocol ->

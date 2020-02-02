@@ -6,6 +6,8 @@ module Make
   : sig
     type 'flow protocol_with_tls
 
+    val underlying : 'flow protocol_with_tls -> 'flow
+
     val protocol_with_tls :
       key:'edn Tuyau.key ->
       'flow Tuyau.Witness.protocol ->

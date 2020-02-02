@@ -27,6 +27,8 @@ module Make
     ; flow : 'flow
     ; queue : (char, Bigarray.int8_unsigned_elt) Ke.t }
 
+  let underlying { flow; _ } = flow
+
   module Make_protocol
       (Flow : Sigs.F with type input = Tuyau.input
                       and type output = Tuyau.output
