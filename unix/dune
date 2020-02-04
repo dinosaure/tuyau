@@ -8,4 +8,4 @@
  (name tuyau_unix_tcp)
  (public_name tuyau.unix.tcp)
  (modules tuyau_unix_tcp)
- (libraries digestif tuyau.unix))
+ (libraries tuyau.unix))
