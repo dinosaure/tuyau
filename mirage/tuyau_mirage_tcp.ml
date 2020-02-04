@@ -71,13 +71,20 @@ module Make (StackV4 : Mirage_stack.V4) = struct
       | [] ->
         Log.debug (fun m -> m "<- Read the TCP flow.") ;
         ( StackV4.TCPV4.read t.flow >|= R.reword_error error >>? function
-        | `Eof -> Lwt.return (Ok `End_of_input)
+        | `Eof ->
+          Log.debug (fun m -> m "<- End of input.") ;
+          Lwt.return (Ok `End_of_input)
         | `Data buf ->
+          Log.debug (fun m -> m "<- Got %d byte(s)." (Cstruct.len buf)) ;
+          (* XXX(dinosaure): [telnet] send '\004' (End Of Transmission) to ask
+             the service to close the connection. [mirage-tcpip] does not handle
+             this _opcode_ so we handle it in this place. *)
           if Cstruct.len buf = 1 && Cstruct.get_char buf 0 = '\004'
-          then (StackV4.TCPV4.close t.flow >>= fun () -> Lwt.return (Ok `End_of_input))
+          then ( StackV4.TCPV4.close t.flow >>= fun () ->
+                 Log.debug (fun m -> m "<- End of input (end of transmission)") ;
+                 Lwt.return (Ok `End_of_input))
           else
-            ( Log.debug (fun m -> m "<- Got %d bytes." (Cstruct.len buf)) ;
-              let max_buf = Cstruct.len buf in
+            ( let max_buf = Cstruct.len buf in
               let max_raw = Cstruct.len raw in
               if max_buf <= max_raw
               then
@@ -118,6 +125,7 @@ module Make (StackV4 : Mirage_stack.V4) = struct
         go 0 raw lst
 
     let send t raw =
+      Log.debug (fun m -> m "-> Write %d byte(s)." (Cstruct.len raw)) ;
       StackV4.TCPV4.write t.flow raw >|= R.reword_error write_error >>? fun () -> Lwt.return (Ok (Cstruct.len raw))
 
     let close t =
