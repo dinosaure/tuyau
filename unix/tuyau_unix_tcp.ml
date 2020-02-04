@@ -30,7 +30,14 @@ module Tcp_protocol = struct
 
   let rec recv ({ socket; closed; _ } as t) raw =
     if closed
-    then Error Socket_closed
+    then Ok `End_of_input
+      (* XXX(dinosaure): it's __not__ clear if we should return an error [Socket_closed]
+         or just say that we reach end-of-input. From my perspective, only [send] should
+         return an error in this case when we assume that the underlying [socket] is still
+         open. In this view, [recv] has the ability to inform that the underlying [socket]
+         is close to the user (eg. [recv flow Cstruct.empty = `End_of_input => socket is closed]).
+
+         However, a such assumption is not clear for anybody. *)
     else
       try
         let max = Cstruct.len raw in
