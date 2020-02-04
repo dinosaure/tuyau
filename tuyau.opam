@@ -19,4 +19,10 @@ depends: [
   "fmt"
   "rresult"
   "domain-name"
+  "base-unix"
+  "lwt"
+  "tls"
+  "logs"
+  "ke"
+  "bigstringaf"
 ]
