@@ -51,13 +51,12 @@ module type S = sig
     val len : t -> int
   end
 
-  val key : ?priority:int -> string -> 'edn key
+  val key : string -> 'edn key
   val name_of_key : 'edn key -> string
-  val priority : 'edn key -> int
 
   val register_service : key:'edn key -> service:('edn, 't, 'flow) service -> protocol:'flow Witness.protocol -> ('t * 'flow) Witness.service
   val register_protocol : key:'edn key -> protocol:('edn, 'flow) protocol -> 'flow Witness.protocol
-  val register_resolver : key:'edn key -> 'edn resolver -> Map.t -> Map.t
+  val register_resolver : key:'edn key -> ?priority:int -> 'edn resolver -> Map.t -> Map.t
 
   type error = [ `Msg of string | `Not_found | `Unresolved | `Invalid_key ]
 
@@ -116,11 +115,14 @@ module Make
   module type RESOLVER = Sigs.RESOLVER
     with type +'a s = 'a s
 
-  type info = { priority : int; name : string; }
+  type info = { name : string; }
+  type 'edn value =
+    { priority : int
+    ; m : (module RESOLVER with type endpoint = 'edn) }
 
   module Rs = E1.Make
       (struct type 'edn t = info end)
-      (struct type 'edn t = (module RESOLVER with type endpoint = 'edn) end)
+      (struct type 'edn t = 'edn value end)
 
   module B = struct type 't t = Protocol : 'edn Rs.key * ('edn, 'flow) protocol -> 'flow t end
   module Pt = E0.Make (B)
@@ -151,9 +153,8 @@ module Make
     | Ok x -> f x
     | Error err -> return (Error err)
 
-  let key ?(priority= 0) name = Rs.Key.create { priority; name; }
+  let key name = Rs.Key.create { name; }
   let name_of_key : type edn. edn key -> string = fun key -> (Rs.Key.info key).name
-  let priority : type edn. edn key -> int = fun key -> (Rs.Key.info key).priority
 
   let register_service
     : type edn t flow.
@@ -169,15 +170,15 @@ module Make
 
   let register_resolver
     : type edn.
-      key:edn key -> edn resolver -> Map.t -> Map.t
-    = fun ~key resolve ->
+      key:edn key -> ?priority:int -> edn resolver -> Map.t -> Map.t
+    = fun ~key ?(priority= 0) resolve ->
       let module Resolve = struct
         type endpoint = edn
         type nonrec +'a s = 'a s
 
         let resolve = resolve
       end in
-      Rs.add key (module Resolve)
+      Rs.add key { priority; m= (module Resolve); }
 
   type error = [ `Msg of string | `Not_found | `Unresolved | `Invalid_key ]
 
@@ -221,11 +222,12 @@ module Make
     = fun m domain_name ->
       let rec go acc = function
         | [] -> return acc
-        | Rs.Value (k, (module Resolve)) :: r ->
+        | Rs.Value (k, { m= (module Resolve); _ }) :: r ->
           Resolve.resolve domain_name >>= function
           | Some edn -> go (Endpoint (k, edn) :: acc) r
           | None -> go acc r in
-      go [] (Rs.bindings m)
+      let compare (Rs.Value (_, { priority= pa; _ })) (Rs.Value (_, { priority= pb; _ })) = Int.compare pa pb in
+      go [] (List.sort compare (Rs.bindings m))
 
   let create
     : Map.t -> [ `host ] Domain_name.t -> (flow, [> error ]) result s
@@ -253,7 +255,7 @@ module Make
       | Some key, None ->
         ( match Rs.find key m with
           | None -> return (Error `Not_found)
-          | Some (module Resolve) ->
+          | Some { m= (module Resolve); _ } ->
             Resolve.resolve domain_name >>= function
             | Some edn -> flow_of_endpoint ~key edn
             | None -> return (Error `Unresolved) )
@@ -272,7 +274,7 @@ module Make
       | Some key, Some protocol ->
         match Rs.find key m with
         | None -> return (Error `Not_found)
-        | Some (module Resolve) ->
+        | Some { m= (module Resolve); _ } ->
           Resolve.resolve domain_name >>= function
           | Some edn -> flow_of_protocol ~key edn ~protocol >>? fun flow ->
             let module P = (val protocol) in

@@ -68,9 +68,8 @@ module type S = sig
     val len : t -> int
   end
 
-  val key : ?priority:int -> string -> 'edn key
+  val key : string -> 'edn key
   val name_of_key : 'edn key -> string
-  val priority : 'edn key -> int
 
   val register_service : key:'edn key -> service:('edn, 't, 'flow) service -> protocol:'flow Witness.protocol -> ('t * 'flow) Witness.service
   (** [register_service ~key ~service ~protocol] creates a representation of a
@@ -86,7 +85,7 @@ module type S = sig
      get the {i endpoint}. The given protocol can create a ['flow] only from
      ['edn]. *)
 
-  val register_resolver : key:'edn key -> 'edn resolver -> Map.t -> Map.t
+  val register_resolver : key:'edn key -> ?priority:int -> 'edn resolver -> Map.t -> Map.t
   (** [register_resolver ~key resolver m] makes a new set of resolvers [m] with [resolver]. *)
 
   type error = [ `Msg of string | `Not_found | `Invalid_key | `Unresolved ]
