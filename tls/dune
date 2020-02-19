@@ -1,4 +1,0 @@
-(library
- (name tuyau_tls)
- (public_name tuyau.tls)
- (libraries logs bigstringaf ke tls tuyau))
