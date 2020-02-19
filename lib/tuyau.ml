@@ -226,7 +226,7 @@ module Make
           Resolve.resolve domain_name >>= function
           | Some edn -> go (Endpoint (k, edn) :: acc) r
           | None -> go acc r in
-      let compare (Rs.Value (_, { priority= pa; _ })) (Rs.Value (_, { priority= pb; _ })) = Int.compare pa pb in
+      let compare (Rs.Value (_, { priority= pa; _ })) (Rs.Value (_, { priority= pb; _ })) = Stdlib.Int.compare pa pb in
       go [] (List.sort compare (Rs.bindings m))
 
   let create
