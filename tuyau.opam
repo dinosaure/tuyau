@@ -25,4 +25,5 @@ depends: [
   "logs"
   "ke"
   "bigstringaf"
+  "tcpip"
 ]
