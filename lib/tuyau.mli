@@ -470,6 +470,51 @@ module type S = sig
   val impl_of_flow : 'flow Witness.protocol -> (module FLOW with type flow = 'flow)
 end
 
+(** {3 Composition.}
+
+    [Tuyau] does not do something magic as we said into the introduction.
+   Composition of protocols must be done by {i protocol} developer. [Tuyau]
+   gives interfaces which can be help this composition - but {i the glue} needed
+   must be implemented.
+
+    Considering TLS as a layer which can compose with an other protocol, the
+   implementation looks like:
+
+    {[
+      type input
+      type output
+      type +'a s
+
+      type 'flow with_tls =
+        { flow : 'flow
+        ; tls : Tls.Engine.state }
+
+      module With_tls
+          (Flow : Sigs.F with type input = input
+                          and type output = output
+                          and type +'a s = 'a s)
+      = struct
+        type flow = Flow.flow with_tls
+        type endpoint = Flow.endpoint * Tls.Config.client
+
+        ...
+      end
+
+      let with_tls
+        :  type edn flow.
+           key:edn key
+        -> flow Witness.protocol
+        -> (edn * Tls.Config.client) key * flow with_tls Witness.protocol
+        = fun ~key protocol ->
+          match impl_of_protocol ~key protocol with
+          | Ok (module Flow) ->
+            let module M = With_tls(Flow) in
+            let k = key "with_tls" in
+            let p = register_protocol ~key:k ~protocol:(module M) in
+            k, p
+          | Error err -> failwithf "%a" pp_error err
+    ]} *)
+
 module Make
     (Scheduler : Sigs.SCHEDULER)
     (Input : Sigs.SINGLETON)
