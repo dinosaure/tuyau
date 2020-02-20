@@ -290,7 +290,7 @@ module Make
       let compare
           (Map.Value (_, Resolver { priority= pa; _ }))
           (Map.Value (_, Resolver { priority= pb; _ })) =
-        Stdlib.Int.compare pa pb in
+        (Stdlib.compare : int -> int -> int) pa pb in
       go [] (List.sort compare (Map.bindings m))
 
   let create
