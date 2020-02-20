@@ -9,7 +9,7 @@
  (public_name tuyau-mirage.tls)
  (optional)
  (modules tuyau_mirage_tls)
- (libraries tuyau-mirage tuyau.tls))
+ (libraries tuyau-mirage tuyau-tls))
 
 (library
  (name tuyau_mirage_tcp)
