@@ -353,7 +353,7 @@ module type S = sig
 
   type error = [ `Msg of string | `Not_found | `Invalid_key | `Unresolved ]
 
-  val pp_error : error Fmt.t
+  val pp_error : Format.formatter -> error -> unit
 
   val abstract : 'flow Witness.protocol -> 'flow -> flow
   (** [abstract protocol flow] constructs an abstracted value {!flow} from a

@@ -77,7 +77,7 @@ module type S = sig
 
   type error = [ `Msg of string | `Not_found | `Unresolved | `Invalid_key ]
 
-  val pp_error : error Fmt.t
+  val pp_error : Format.formatter -> error -> unit
 
   val abstract : 'flow Witness.protocol -> 'flow -> flow
 
@@ -224,11 +224,13 @@ module Make
 
   type error = [ `Msg of string | `Not_found | `Unresolved | `Invalid_key ]
 
+  let pf ppf fmt = Format.fprintf ppf fmt
+
   let pp_error ppf = function
-    | `Msg err -> Fmt.string ppf err
-    | `Not_found -> Fmt.string ppf "Not found"
-    | `Unresolved -> Fmt.string ppf "Unresolved"
-    | `Invalid_key -> Fmt.string ppf "Invalid key"
+    | `Msg err -> pf ppf "%s" err
+    | `Not_found -> pf ppf "Not found"
+    | `Unresolved -> pf ppf "Unresolved"
+    | `Invalid_key -> pf ppf "Invalid key"
 
   let flow_of_endpoint
     : type edn.
@@ -247,6 +249,8 @@ module Make
             | Error _err -> go r in
       go (Ptr.bindings ())
 
+  let error_msgf fmt = Format.kasprintf (fun err -> Error (`Msg err)) fmt
+
   let flow_of_protocol
     : type edn flow.
          key:edn key
@@ -260,7 +264,7 @@ module Make
       | Some E1.Refl.Refl ->
         Protocol.flow edn >>= function
         | Ok flow -> return (Ok flow)
-        | Error err -> return (Rresult.R.error_msgf "%a" Protocol.pp_error err)
+        | Error err -> return (error_msgf "%a" Protocol.pp_error err)
 
   type endpoint = Endpoint : 'edn key * 'edn -> endpoint
 
@@ -368,7 +372,7 @@ module Make
         | Ok t ->
           return (Ok (t, protocol))
         | Error err ->
-          return (Rresult.R.error_msgf "%a" Service.pp_error err)
+          return (error_msgf "%a" Service.pp_error err)
 
   let impl_of_service
     : type edn t flow.

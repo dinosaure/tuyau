@@ -16,8 +16,6 @@ run-test: [ "dune" "runtest" "-p" name "-j" jobs ]
 depends: [
   "ocaml"       {>= "4.07.0"}
   "dune"
-  "fmt"
-  "rresult"
   "domain-name"
   "stdlib-shims"
 ]
