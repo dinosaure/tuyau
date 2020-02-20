@@ -53,7 +53,9 @@ module Tcp_protocol = struct
                  if List.length rd = 0
                  then Ok (`Input len)
                  else
-                   let open Rresult in
+                   let ( >>= ) x f = match x with
+                     | Ok x -> f x
+                     | Error err -> Error err in
                    recv t (Cstruct.shift raw len) >>= function
                    | `End_of_input -> t.closed <- true ; Ok (`Input len)
                    | `Input rest -> Ok (`Input (len + rest))

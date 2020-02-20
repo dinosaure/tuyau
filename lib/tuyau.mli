@@ -94,6 +94,13 @@ module Sigs = Sigs
 
     You can start to read the rest of the documentation. *)
 
+type 'a key
+
+type resolvers
+(** Type of a set of resolvers. *)
+
+val empty : resolvers
+
 module type S = sig
   type input
   (** The type of the {i input}. A flow is able to {i send} a {i payload}. The
@@ -130,21 +137,23 @@ module type S = sig
      [Tuyau_mirage] or [Tuyau_caml] are different and can not be used together
      into a same place. *)
 
-  module type S = Sigs.S
+  type scheduler
+
+  module type SERVICE = Sigs.SERVICE
     with type +'a s = 'a s
 
-  module type F = Sigs.F
+  module type PROTOCOL = Sigs.PROTOCOL
     with type input = input
      and type output = output
      and type +'a s = 'a s
 
   type ('edn, 't, 'flow) service =
-    (module S with type endpoint = 'edn
-               and type t = 't
-               and type flow = 'flow)
+    (module SERVICE with type endpoint = 'edn
+                     and type t = 't
+                     and type flow = 'flow)
   type ('edn, 'flow) protocol =
-    (module F with type endpoint = 'edn
-               and type flow = 'flow)
+    (module PROTOCOL with type endpoint = 'edn
+                          and type flow = 'flow)
 
   module type FLOW = Sigs.FLOW
     with type input = input
@@ -174,9 +183,6 @@ module type S = sig
   *)
   type flow = Flow : 'flow * (module FLOW with type flow = 'flow) -> flow
 
-  module type RESOLVER = Sigs.RESOLVER
-    with type +'a s = 'a s
-
   type 'edn resolver = [ `host ] Domain_name.t -> ('edn option) s
   (** A [resolver] is an abstract function which resolves a given [[ `host ]
      Domain_name.t] to an {i endpoint}. At least, it can be implemented as a DNS
@@ -198,7 +204,7 @@ module type S = sig
      initialize/connect a {!FLOW.flow} from it. In our example, a [Unix] TCP
      service should exist with [Unix.connect]. *)
 
-  type 'edn key
+  type nonrec 'edn key = ('edn * scheduler) key
   (** To be able to {i plug} a {!resolver} to a {!service} or a {!protocol}, a
      value ['edn key] exists. It represents, at the resolution step, {!protocol}
      into an user-defined {!Map.t}.
@@ -228,17 +234,6 @@ module type S = sig
   module Witness : sig
     type 'flow protocol
     type 't service
-  end
-
-  module Map : sig
-    type t
-
-    val empty : t
-    val is_empty : t -> bool
-
-    val mem : 'a key -> t -> bool
-    val rem : 'a key -> t -> t
-    val len : t -> int
   end
 
   val key : string -> 'edn key
@@ -281,7 +276,11 @@ module type S = sig
 
   (** {3 Registration.} *)
 
-  val register_service : key:'edn key -> service:('edn, 't, 'flow) service -> protocol:'flow Witness.protocol -> ('t * 'flow) Witness.service
+  val register_service
+    :  key:'edn key
+    -> service:('edn, 't, 'flow) service
+    -> protocol:'flow Witness.protocol
+    -> ('t * 'flow) Witness.service
   (** [register_service ~key ~service ~protocol] registers implementation of a
      {i service} which is able to make a {i flow} (an established transmission
      between the service and an entity) according to the given definition
@@ -304,7 +303,10 @@ module type S = sig
           register_service ~key ~service:(module TCP_service) ~protocol:TCP.protocol
       ]} *)
 
-  val register_protocol : key:'edn key -> protocol:('edn, 'flow) protocol -> 'flow Witness.protocol
+  val register_protocol
+    :  key:'edn key
+    -> protocol:('edn, 'flow) protocol
+    -> 'flow Witness.protocol
   (** [register_protocol ~key ~protocol] registers implementation of a {i
      protocol} and binds it with [key] - any resolver bound into a {!Map.t} with
      this [key] will call (at least) [connect] given by [protocol].
@@ -325,7 +327,12 @@ module type S = sig
           register_protocol ~key ~protocol:(module TCP)
       ]} *)
 
-  val register_resolver : key:'edn key -> ?priority:int -> 'edn resolver -> Map.t -> Map.t
+  val register_resolver
+    :  key:'edn key
+    -> ?priority:int
+    -> 'edn resolver
+    -> resolvers
+    -> resolvers
   (** [register_resolver ~key ?priority resolver m] adds a new [resolver] into
      [m]. [resolver] is bound to [key]. From a set of [key] which represent the
      way to initialize a {!protocol}, we can bind a [resolver] into [m].
@@ -346,7 +353,7 @@ module type S = sig
 
   type error = [ `Msg of string | `Not_found | `Invalid_key | `Unresolved ]
 
-  val pp_error : error Fmt.t
+  val pp_error : Format.formatter -> error -> unit
 
   val abstract : 'flow Witness.protocol -> 'flow -> flow
   (** [abstract protocol flow] constructs an abstracted value {!flow} from a
@@ -380,7 +387,11 @@ module type S = sig
           | Error err -> failwithf "%a" pp_error err
       ]} *)
 
-  val flow_of_protocol : key:'edn key -> 'edn -> protocol:'flow Witness.protocol -> ('flow, [> error ]) result s
+  val flow_of_protocol
+    :  key:'edn key
+    -> 'edn
+    -> protocol:'flow Witness.protocol
+    -> ('flow, [> error ]) result s
   (** [flow_of_protocol ~key edn ~protocol] creates a new concrete ['flow] from
      the given endpoint ['edn]. Protocol used to initialize the transmission is
      (and only is) [protocol].
@@ -403,7 +414,11 @@ module type S = sig
 
   (** {3 [Tuyau] as a client.} *)
 
-  val flow : Map.t -> ?key:'edn key -> ?protocol:'flow Witness.protocol -> [ `host ] Domain_name.t -> (flow, [> error ]) result s
+  val flow
+    :  resolvers
+    -> ?key:'edn key
+    -> ?protocol:'flow Witness.protocol
+    -> [ `host ] Domain_name.t -> (flow, [> error ]) result s
   (** [flow resolvers domain_name] tries to create a new abstracted according to
      [resolvers]. Each resolver tries to resolve the given domain-name (they are
      ordered by the given priority). Then, from a {i heterogeneous} set of {i
@@ -437,7 +452,11 @@ module type S = sig
 
   (** {3 [Tuyau] as a server.} *)
 
-  val serve : key:'edn key -> 'edn -> service:('t * 'flow) Witness.service -> ('t * 'flow Witness.protocol, [> error ]) result s
+  val serve
+    :  key:'edn key
+    -> 'edn
+    -> service:('t * 'flow) Witness.service
+    -> ('t * 'flow Witness.protocol, [> error ]) result s
   (** [serve ~key edn ~service] creates a new {i master} server with which {i
      protocol} it can deliver according a configuration ['edn]. [serve] is more
      restrictive than {!flow} when we assert that the initialization of a
@@ -465,8 +484,21 @@ module type S = sig
             go ()
       ]} *)
 
-  val impl_of_service : key:'edn key -> ('t * 'flow) Witness.service -> ((module S with type endpoint = 'edn and type t = 't and type flow = 'flow), [> error ]) result
-  val impl_of_protocol : key:'edn key -> 'flow Witness.protocol -> ((module F with type endpoint = 'edn and type flow = 'flow), [> error ]) result
+  val impl_of_service
+    :  key:'edn key
+    -> ('t * 'flow) Witness.service
+    -> ((module SERVICE with type endpoint = 'edn
+                         and type t = 't
+                         and type flow = 'flow),
+        [> error ]) result
+
+  val impl_of_protocol
+    :  key:'edn key
+    -> 'flow Witness.protocol
+    -> ((module PROTOCOL with type endpoint = 'edn
+                          and type flow = 'flow),
+        [> error ]) result
+
   val impl_of_flow : 'flow Witness.protocol -> (module FLOW with type flow = 'flow)
 end
 

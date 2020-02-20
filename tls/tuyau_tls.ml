@@ -30,9 +30,9 @@ module Make
   let underlying { flow; _ } = flow
 
   module Make_protocol
-      (Flow : Sigs.F with type input = Tuyau.input
-                      and type output = Tuyau.output
-                      and type +'a s = 'a Scheduler.t)
+      (Flow : Sigs.PROTOCOL with type input = Tuyau.input
+                             and type output = Tuyau.output
+                             and type +'a s = 'a Scheduler.t)
   = struct
     type input = Tuyau.input
     type output = Tuyau.output
@@ -239,7 +239,7 @@ module Make
     ; tls : Tls.Config.server }
 
   module Make_server
-      (Service : Sigs.S with type +'a s = 'a Scheduler.t)
+      (Service : Sigs.SERVICE with type +'a s = 'a Scheduler.t)
   = struct
     type +'a s = 'a Tuyau.s
 

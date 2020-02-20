@@ -28,7 +28,7 @@ module Make (Key : Sigs.FUNCTOR) = struct
     let witness = X.witness
 
     let () =
-      let uid = Stdlib.Obj.Extension_constructor.id [%extension_constructor T] in
+      let[@warning "-3"] uid = Stdlib.Obj.extension_id [%extension_constructor T] in
       Hashtbl.add handlers uid
         (function T x -> Value (x, witness) | _ -> raise Not_found) ;
       Hashtbl.add witnesses uid (Key witness)
@@ -47,7 +47,8 @@ module Make (Key : Sigs.FUNCTOR) = struct
       | f :: r -> ( try f t with Not_found -> go r ) in
     go
       (Hashtbl.find_all handlers
-         (Stdlib.Obj.Extension_constructor.id (Stdlib.Obj.Extension_constructor.of_val t)))
+         Stdlib.Obj.((extension_id (extension_constructor t))
+                      [@warning "-3"]))
 
   let extract (t : t) (type a) ((module S) : a s) : a option = match t with
     | S.T x -> Some x
