@@ -60,7 +60,7 @@ module type FLOW = sig
   val close : flow -> (unit, error) result s
 end
 
-module type F = sig
+module type PROTOCOL = sig
   include FLOW
 
   type endpoint
@@ -75,24 +75,10 @@ module type SERVICE = sig
   type t
 
   type error
-
-  val pp_error : error Fmt.t
-  val accept : t -> (flow, error) result s
-  val close : t -> (unit, error) result s
-end
-
-module type S = sig
-  include SERVICE
-
   type endpoint
 
   val make : endpoint -> (t, error) result s
-end
-
-module type RESOLVER = sig
-  type +'a s
-
-  type endpoint
-
-  val resolve : [ `host ] Domain_name.t -> endpoint option s
+  val pp_error : error Fmt.t
+  val accept : t -> (flow, error) result s
+  val close : t -> (unit, error) result s
 end

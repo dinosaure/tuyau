@@ -80,7 +80,7 @@ let resolver ~port domain =
 
 let client ?(port= 4242) domain_name =
   let open Rresult in
-  let resolvers = Tuyau_unix.register_resolver ~key:tls_endpoint (resolver ~port) Tuyau_unix.Map.empty in
+  let resolvers = Tuyau_unix.register_resolver ~key:tls_endpoint (resolver ~port) Tuyau.empty in
   Tuyau_unix.flow resolvers domain_name >>= fun (Tuyau_unix.Flow (socket, (module Flow))) ->
   let raw0 = Cstruct.create 0x1000 in
   let rec go () = match input_line stdin with
