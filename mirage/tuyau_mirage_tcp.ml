@@ -128,7 +128,7 @@ module Make (Time : Mirage_time.S) (StackV4 : Mirage_stack.V4) = struct
 
     let send t raw =
       Log.debug (fun m -> m "-> Start to write %d byte(s)." (Cstruct.len raw)) ;
-      let sleep () = Time.sleep_ns 1000000L >|= fun () -> Error `Timeout in
+      let sleep () = Time.sleep_ns 1000000000L >|= fun () -> Error `Timeout in
       (* XXX(dinosaure): it seems that [StackV4.TCPV4.write] can block.
          We put an abitrary limit of time to send something. But the error can come
          from [mirage-tcpip]. *) 
