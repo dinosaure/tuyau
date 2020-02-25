@@ -16,4 +16,4 @@
  (public_name tuyau-mirage.tcp)
  (optional)
  (modules tuyau_mirage_tcp)
- (libraries logs mirage-time mirage-stack bigstringaf ke tcpip.tcp tuyau-mirage))
+ (libraries logs mirage-stack bigstringaf ke tcpip.tcp tuyau-mirage))

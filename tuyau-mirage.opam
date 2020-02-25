@@ -25,7 +25,6 @@ depopts: [
   "tuyau-tls"
   "logs"
   "mirage-stack"
-  "mirage-time"
   "bigstringaf"
   "ke"
   "tcpip"
