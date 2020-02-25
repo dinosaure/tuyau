@@ -11,7 +11,7 @@ type 'stack configuration =
   ; keepalive : Mirage_protocols.Keepalive.t option
   ; port : int }
 
-module Make (StackV4 : Mirage_stack.V4) = struct
+module Make (Time : Mirage_time.S) (StackV4 : Mirage_stack.V4) = struct
   open Rresult
   open Lwt.Infix
 
@@ -39,11 +39,13 @@ module Make (StackV4 : Mirage_stack.V4) = struct
       | Input_too_large
       | TCP_error of StackV4.TCPV4.error
       | Write_error of StackV4.TCPV4.write_error
+      | Timeout
 
     let pp_error ppf = function
       | Input_too_large -> Fmt.string ppf "Input too large"
       | TCP_error err -> StackV4.TCPV4.pp_error ppf err
       | Write_error err -> StackV4.TCPV4.pp_write_error ppf err
+      | Timeout -> Fmt.string ppf "Timeout"
 
     let error : StackV4.TCPV4.error -> error = fun err -> TCP_error err
     let write_error : StackV4.TCPV4.write_error -> error = fun err -> Write_error err
@@ -126,10 +128,17 @@ module Make (StackV4 : Mirage_stack.V4) = struct
 
     let send t raw =
       Log.debug (fun m -> m "-> Start to write %d byte(s)." (Cstruct.len raw)) ;
-      StackV4.TCPV4.write t.flow raw >|= R.reword_error write_error >>= function
-      | Error err ->
-        Log.err (fun m -> m "-> Got an error when writing: %a" pp_error err) ;
-        Lwt.return (Error err)
+      let sleep () = Time.sleep_ns 1000000L >|= fun () -> Error `Timeout in
+      (* XXX(dinosaure): it seems that [StackV4.TCPV4.write] can block.
+         We put an abitrary limit of time to send something. But the error can come
+         from [mirage-tcpip]. *) 
+      Lwt.pick [ sleep (); StackV4.TCPV4.write t.flow raw ] >|= R.reword_error (fun err -> `Write err) >>= function
+      | Error `Timeout ->
+        Log.err (fun m -> m "-> Timeout to write something") ;
+        Lwt.return (Error Timeout)
+      | Error (`Write err) ->
+        Log.err (fun m -> m "-> Got an error when writing: %a" StackV4.TCPV4.pp_write_error err) ;
+        Lwt.return (Error (Write_error err))
       | Ok () ->
         Log.debug (fun m -> m "-> Write %d byte(s)." (Cstruct.len raw)) ;
         Lwt.return (Ok (Cstruct.len raw))

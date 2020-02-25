@@ -9,7 +9,7 @@ type 'stack configuration =
   ; keepalive : Mirage_protocols.Keepalive.t option
   ; port : int }
 
-module Make (StackV4 : Mirage_stack.V4) : sig
+module Make (Time : Mirage_time.S) (StackV4 : Mirage_stack.V4) : sig
   include Tuyau_mirage.T
     with type endpoint = (StackV4.t, Ipaddr.V4.t) endpoint
      and type configuration = StackV4.t configuration
