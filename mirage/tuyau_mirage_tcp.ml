@@ -125,8 +125,10 @@ module Make (StackV4 : Mirage_stack.V4) = struct
         go 0 raw lst
 
     let send t raw =
+      Log.debug (fun m -> m "-> Start to write %d byte(s)." (Cstruct.len raw)) ;
+      StackV4.TCPV4.write t.flow raw >|= R.reword_error write_error >>? fun () ->
       Log.debug (fun m -> m "-> Write %d byte(s)." (Cstruct.len raw)) ;
-      StackV4.TCPV4.write t.flow raw >|= R.reword_error write_error >>? fun () -> Lwt.return (Ok (Cstruct.len raw))
+      Lwt.return (Ok (Cstruct.len raw))
 
     let close t =
       StackV4.TCPV4.close t.flow >>= fun () -> Lwt.return (Ok ())
