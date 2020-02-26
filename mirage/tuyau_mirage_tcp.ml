@@ -3,12 +3,14 @@ module Ke = Ke.Rke.Weighted
 type ('stack, 'ip) endpoint =
   { stack : 'stack
   ; keepalive : Mirage_protocols.Keepalive.t option
+  ; nodelay : bool
   ; ip : 'ip
   ; port : int }
 
 type 'stack configuration =
   { stack : 'stack
   ; keepalive : Mirage_protocols.Keepalive.t option
+  ; nodelay : bool
   ; port : int }
 
 module Make (StackV4 : Mirage_stack.V4) = struct
@@ -24,6 +26,7 @@ module Make (StackV4 : Mirage_stack.V4) = struct
 
   type protocol =
     { flow : StackV4.TCPV4.flow
+    ; nodelay : bool
     ; queue : (char, Bigarray.int8_unsigned_elt) Ke.t }
 
   let dst { flow; _ } = StackV4.TCPV4.dst flow
@@ -50,15 +53,16 @@ module Make (StackV4 : Mirage_stack.V4) = struct
 
     type flow = protocol =
       { flow : StackV4.TCPV4.flow
+      ; nodelay : bool
       ; queue : (char, Bigarray.int8_unsigned_elt) Ke.t }
 
     type nonrec endpoint = endpoint
 
-    let flow { stack; keepalive; ip; port; }=
+    let flow { stack; keepalive; nodelay; ip; port; }=
       let tcpv4 = StackV4.tcpv4 stack in
       StackV4.TCPV4.create_connection tcpv4 ?keepalive (ip, port) >|= R.reword_error error >>? fun flow ->
       let queue, _ = Ke.create ~capacity:0x1000 Bigarray.Char in
-      Lwt.return (Ok { flow; queue; })
+      Lwt.return (Ok { flow; nodelay; queue; })
 
     let length = Cstruct.len
 
@@ -125,8 +129,18 @@ module Make (StackV4 : Mirage_stack.V4) = struct
         go 0 raw lst
 
     let send t raw =
-      Log.debug (fun m -> m "-> Write %d byte(s)." (Cstruct.len raw)) ;
-      StackV4.TCPV4.write t.flow raw >|= R.reword_error write_error >>? fun () -> Lwt.return (Ok (Cstruct.len raw))
+      Log.debug (fun m -> m "-> Start to write %d byte(s)." (Cstruct.len raw)) ;
+      let send flow raw =
+        if t.nodelay
+        then StackV4.TCPV4.write_nodelay t.flow raw
+        else StackV4.TCPV4.write t.flow raw in
+      send flow raw >|= R.reword_error write_error >>= function
+      | Error err ->
+        Log.err (fun m -> m "-> Got an error when writing: %a" pp_error err) ;
+        Lwt.return (Error err)
+      | Ok () ->
+        Log.debug (fun m -> m "-> Write %d byte(s)." (Cstruct.len raw)) ;
+        Lwt.return (Ok (Cstruct.len raw))
 
     let close t =
       StackV4.TCPV4.close t.flow >>= fun () -> Lwt.return (Ok ())
@@ -146,6 +160,7 @@ module Make (StackV4 : Mirage_stack.V4) = struct
     ; queue : StackV4.TCPV4.flow Queue.t
     ; condition : unit Lwt_condition.t
     ; mutex : Lwt_mutex.t
+    ; nodelay : bool
     ; mutable closed : bool }
 
   module Service = struct
@@ -160,7 +175,7 @@ module Make (StackV4 : Mirage_stack.V4) = struct
     type endpoint = configuration
     type t = service
 
-    let make { stack; keepalive; port; } =
+    let make { stack; keepalive; nodelay; port; } =
       let queue = Queue.create () in
       let condition = Lwt_condition.create () in
       let mutex = Lwt_mutex.create () in
@@ -171,9 +186,9 @@ module Make (StackV4 : Mirage_stack.V4) = struct
         Lwt_mutex.unlock mutex ;
         Lwt.return () in
       StackV4.listen_tcpv4 ?keepalive stack ~port listener ;
-      Lwt.return (Ok { stack; queue; condition; mutex; closed= false; })
+      Lwt.return (Ok { stack; queue; condition; mutex; nodelay; closed= false; })
 
-    let rec accept ({ queue; condition; mutex; closed; _ } as t) =
+    let rec accept ({ queue; condition; mutex; nodelay; closed; _ } as t) =
       Lwt_mutex.lock mutex >>= fun () ->
       let rec await () =
         if Queue.is_empty queue && not closed
@@ -183,7 +198,7 @@ module Make (StackV4 : Mirage_stack.V4) = struct
       | flow ->
         let queue, _ = Ke.create ~capacity:0x1000 Bigarray.Char in
         Lwt_mutex.unlock mutex ;
-        Lwt.return (Ok { flow; queue; })
+        Lwt.return (Ok { flow; nodelay; queue; })
       | exception Queue.Empty ->
         if closed
         then ( Lwt_mutex.unlock mutex ; Lwt.return (Error Connection_aborted))

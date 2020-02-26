@@ -1,12 +1,14 @@
 type ('stack, 'ip) endpoint =
   { stack : 'stack
   ; keepalive : Mirage_protocols.Keepalive.t option
+  ; nodelay : bool
   ; ip : 'ip
   ; port : int }
 
 type 'stack configuration =
   { stack : 'stack
   ; keepalive : Mirage_protocols.Keepalive.t option
+  ; nodelay : bool
   ; port : int }
 
 module Make (StackV4 : Mirage_stack.V4) : sig
