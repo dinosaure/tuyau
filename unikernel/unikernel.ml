@@ -44,6 +44,7 @@ module Make
     let conf =
       { Tuyau_mirage_tcp.stack= stackv4
       ; keepalive= None
+      ; nodelay= false
       ; port= 9090 } in
     Tuyau_mirage.impl_of_service ~key:tls_configuration tls_service >? fun (module Server) ->
     Tuyau_mirage.serve ~key:tls_configuration (conf, tls) ~service:tls_service >>? fun (t, protocol) ->
@@ -60,6 +61,7 @@ module Make
     let conf =
       { Tuyau_mirage_tcp.stack= stackv4
       ; keepalive= None
+      ; nodelay= false
       ; port= 8080 } in
     Tuyau_mirage.impl_of_service ~key:TCP.configuration TCP.service >? fun (module Server) ->
     Tuyau_mirage.serve ~key:TCP.configuration conf ~service:TCP.service >>? fun (t, protocol) ->
@@ -140,6 +142,7 @@ module Make
     let conf =
       { Tuyau_mirage_tcp.stack
       ; keepalive= None
+      ; nodelay= false
       ; port } in
     Tuyau_mirage.impl_of_service ~key:tls_configuration tls_service >? fun (module Server) ->
     Tuyau_mirage.serve ~key:tls_configuration (conf, tls) ~service:tls_service >>? fun (t, protocol) ->
@@ -161,7 +164,7 @@ module Make
     Fmt.pr ">>> (to_tls) resolve %a.\n%!" Domain_name.pp domain_name ;
     match tls_server with
     | Some tls_server when Domain_name.equal tls_domain_name domain_name ->
-      let conf = { Tuyau_mirage_tcp.stack; keepalive= None; ip= tls_server; port= 9292; } in
+      let conf = { Tuyau_mirage_tcp.stack; keepalive= None; nodelay= false; ip= tls_server; port= 9292; } in
       let tls = Tls.Config.client ~authenticator:X509.Authenticator.null () in
       Lwt.return (Some (conf, tls))
     | _ -> Lwt.return None
@@ -171,13 +174,13 @@ module Make
     Fmt.pr ">>> (to_tcp) resolve %a.\n%!" Domain_name.pp domain_name ;
     match tcp_server with
     | Some tcp_server when Domain_name.equal tcp_domain_name domain_name ->
-      let conf = { Tuyau_mirage_tcp.stack; keepalive= None; ip= tcp_server; port= 8282; } in
+      let conf = { Tuyau_mirage_tcp.stack; keepalive= None; nodelay= false; ip= tcp_server; port= 8282; } in
       Lwt.return (Some conf)
     | _ -> Lwt.return None
 
   let start console store stackv4 _ =
     let resolvers =
-      Tuyau_mirage.Map.empty
+      Tuyau.empty
       |> Tuyau_mirage.register_resolver ~key:tls_endpoint (to_tls stackv4 (Key_gen.tls_server ()))
       |> Tuyau_mirage.register_resolver ~key:TCP.endpoint (to_tcp stackv4 (Key_gen.tcp_server ())) in
     let tls_server () = tls_server console store ~f:handler stackv4 >>= function

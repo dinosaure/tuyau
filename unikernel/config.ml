@@ -15,7 +15,9 @@ let unikernel =
     (console @-> kv_ro @-> stackv4 @-> job)
 
 let packages =
-  [ package "tuyau-mirage" ~sublibs:[ "tcp"; "tls"; ] ]
+  [ package "tuyau"
+  ; package "tuyau-tls"
+  ; package "tuyau-mirage" ~sublibs:[ "tcp"; "tls"; ] ]
 
 let store = generic_kv_ro "cert"
 
