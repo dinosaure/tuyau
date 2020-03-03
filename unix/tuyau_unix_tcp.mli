@@ -5,6 +5,7 @@ type protocol
 
 val endpoint : endpoint key
 val protocol : protocol Witness.protocol
+val socket : protocol -> Unix.file_descr
 
 type configuration =
   { inet_addr : Unix.inet_addr

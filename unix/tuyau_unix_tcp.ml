@@ -6,6 +6,8 @@ type protocol =
   ; linger : Bytes.t
   ; mutable closed : bool }
 
+let socket : protocol -> Unix.file_descr = fun { socket; _ } -> socket
+
 module Tcp_protocol = struct
   type input = Tuyau_unix.input
   type output = Tuyau_unix.output
