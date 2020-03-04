@@ -12,7 +12,7 @@ type configuration =
   ; port : int
   ; capacity : int }
 
-type service
+type service = private Unix.file_descr
 
 val configuration : configuration key
 val service : (service * protocol) Witness.service
