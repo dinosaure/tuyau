@@ -132,9 +132,9 @@ module Make (StackV4 : Mirage_stack.V4) = struct
       Log.debug (fun m -> m "-> Start to write %d byte(s)." (Cstruct.len raw)) ;
       let send flow raw =
         if t.nodelay
-        then StackV4.TCPV4.write_nodelay t.flow raw
-        else StackV4.TCPV4.write t.flow raw in
-      send flow raw >|= R.reword_error write_error >>= function
+        then StackV4.TCPV4.write_nodelay flow raw
+        else StackV4.TCPV4.write flow raw in
+      send t.flow raw >|= R.reword_error write_error >>= function
       | Error err ->
         Log.err (fun m -> m "-> Got an error when writing: %a" pp_error err) ;
         Lwt.return (Error err)
