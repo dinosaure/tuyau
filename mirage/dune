@@ -2,7 +2,7 @@
  (name tuyau_mirage)
  (public_name tuyau-mirage)
  (modules tuyau_mirage)
- (libraries cstruct lwt tuyau))
+ (libraries tuyau-lwt))
 
 (library
  (name tuyau_mirage_tls)

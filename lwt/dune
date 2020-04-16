@@ -1,0 +1,7 @@
+(library
+ (name tuyau_lwt)
+ (public_name tuyau-lwt)
+ (modules tuyau_lwt)
+ (libraries cstruct lwt tuyau))
+
+
