@@ -1,5 +1,7 @@
 module Sigs = Sigs
 
+let strf = Format.asprintf
+
 type _ witness = ..
 type _ resolver =
   | Resolver : { priority : int
@@ -45,6 +47,10 @@ module type S = sig
      and type +'a s = 'a s
 
   type flow = Flow : 'flow * (module FLOW with type flow = 'flow) -> flow
+
+  val recv : flow -> input -> (int Sigs.or_end_of_input, [> `Msg of string ]) result s
+  val send : flow -> output -> (int, [> `Msg of string ]) result s
+
   type 'edn resolver = [ `host ] Domain_name.t -> ('edn option) s
 
   type 'edn key = ('edn * scheduler) Map.key
@@ -191,9 +197,18 @@ module Make
 
   let return = Scheduler.return
   let ( >>= ) x f = Scheduler.bind x f
+  let ( >>| ) x f = x >>= fun x -> return (f x)
   let ( >>? ) x f = x >>= function
     | Ok x -> f x
     | Error err -> return (Error err)
+
+  let recv (Flow (flow, (module Flow))) input = Flow.recv flow input >>| function
+    | Ok _ as v -> v
+    | Error err -> Error (`Msg (strf "%a" Flow.pp_error err))
+
+  let send (Flow (flow, (module Flow))) output = Flow.send flow output >>| function
+    | Ok _ as v -> v
+    | Error err -> Error (`Msg (strf "%a" Flow.pp_error err))
 
   let key name = Map.Key.create name
   let name_of_key : type edn. edn key -> string = fun key -> (Map.Key.info key)
