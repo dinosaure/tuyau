@@ -1,11 +1,6 @@
-module Mirage_scheduler = struct
-  type +'a t = 'a Lwt.t
+module Mirage_scheduler = Tuyau_lwt.Lwt_scheduler
 
-  let bind x f = Lwt.bind x f
-  let return x = Lwt.return x
-end
-
-include Tuyau.Make(Mirage_scheduler)(Cstruct)(Cstruct)
+include Tuyau_lwt
 
 module type T = sig
   type protocol
