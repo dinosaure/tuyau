@@ -6,7 +6,7 @@ script: bash -ex .travis-opam.sh
 sudo: true
 env:
   global:
-  - PINS="tuyau.dev:. tuyau-unix.dev:. tuyau-tls.dev:. tuyau-mirage.dev:."
+  - PINS="tuyau.dev:. tuyau-unix.dev:. tuyau-tls.dev:. tuyau-lwt.dev:. tuyau-mirage.dev:."
   matrix:
   - PACKAGE="tuyau" OCAML_VERSION=4.07 TESTS=true
   - PACKAGE="tuyau-tls" OCAML_VERSION=4.07 TESTS=true
