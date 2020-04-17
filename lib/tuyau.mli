@@ -185,6 +185,7 @@ module type S = sig
 
   val recv : flow -> input -> (int Sigs.or_end_of_input, [> `Msg of string ]) result s
   val send : flow -> output -> (int, [> `Msg of string ]) result s
+  val close : flow -> (unit, [> `Msg of string ]) result s
 
   type 'edn resolver = [ `host ] Domain_name.t -> ('edn option) s
   (** A [resolver] is an abstract function which resolves a given [[ `host ]

@@ -50,6 +50,7 @@ module type S = sig
 
   val recv : flow -> input -> (int Sigs.or_end_of_input, [> `Msg of string ]) result s
   val send : flow -> output -> (int, [> `Msg of string ]) result s
+  val close : flow -> (unit, [> `Msg of string ]) result s
 
   type 'edn resolver = [ `host ] Domain_name.t -> ('edn option) s
 
@@ -207,6 +208,10 @@ module Make
     | Error err -> Error (`Msg (strf "%a" Flow.pp_error err))
 
   let send (Flow (flow, (module Flow))) output = Flow.send flow output >>| function
+    | Ok _ as v -> v
+    | Error err -> Error (`Msg (strf "%a" Flow.pp_error err))
+
+  let close (Flow (flow, (module Flow))) = Flow.close flow >>| function
     | Ok _ as v -> v
     | Error err -> Error (`Msg (strf "%a" Flow.pp_error err))
 
