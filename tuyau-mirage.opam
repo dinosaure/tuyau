@@ -17,8 +17,7 @@ depends: [
   "ocaml"       {>= "4.07.0"}
   "dune"
   "tuyau"
-  "cstruct"
-  "lwt"
+  "tuyau-lwt"
 ]
 
 depopts: [
