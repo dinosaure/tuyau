@@ -97,7 +97,12 @@ module Sigs = Sigs
 type 'a key
 
 type resolvers
-(** Type of a set of resolvers. *)
+(** Type of a set of resolvers.
+
+    This type is outside any implementation of [Tuyau] to let others libraries
+   to depend only on the package [tuyau]. Of course, at one point (specially
+   when they want to use [Tuyau]), they must do a choice about which
+   implementation of [Tuyau] they want - [Tuyau_lwt] or [Tuyau_unix]. *)
 
 val empty : resolvers
 
@@ -160,11 +165,10 @@ module type S = sig
      and type output = output
      and type +'a s = 'a s
 
-  (** A [flow] is an abstract value ['flow] and a module {!FLOW} (parameterized
-     with ['flow]). The value ['flow] is already connected to an {i endpoint}
-     and the module {!FLOW} can not give to the user a way to re-create
-     (re-connect) the flow. However, it gives a way to receive and send {i
-     payload}:
+  (** A [flow] is an abstract value which contains your flow. As an abstracted value,
+     we can use it with few functions such as {!send}, {!recv} or {!close}. If you are
+     not aware about underlying implementation used, it should be enough for you to
+     only use it as is.
 
       {[
         type input = bytes
@@ -174,14 +178,28 @@ module type S = sig
 
         let process (Flow (flow, (module Flow))) =
           let buf = Bytes.create 0x1000 in
-          match Flow.recv flow buf 0 0x1000 with
+          match Tuyau.recv flow buf 0 0x1000 with
           | Ok (`Data len) ->
             let str = Bytes.sub_string buf 0 len in
-            ignore (Flow.send flow str 0 len)
+            ignore (Tuyau.send flow str 0 len)
           | _ -> failwith "Flow.recv"
       ]}
+
+      The given flow can be more complex than a simple TCP flow for example. It can be
+     wrapped into a TLS layer. However the goal is to be able to implement a protocol
+     without such complexity.
   *)
   type flow
+
+  (** {3 Usual operations on the {!flow}.}
+
+      Even if semantics of them is quite spontaneous ({!recv} can receive something,
+     {!send} can send something, {!close} closes the given [flow]), the evil is into
+     details. So they are only wrappers of associated {!recv}, {!send} and {!close}
+     functions of the underlying implementation of the given [flow].
+
+     By that, precise behaviours of them depend on the associated implementation.
+  *)
 
   val recv : flow -> input -> (int Sigs.or_end_of_input, [> `Msg of string ]) result s
   val send : flow -> output -> (int, [> `Msg of string ]) result s
@@ -274,7 +292,11 @@ module type S = sig
           | Ok (flow, (module Flow)) ->
             ignore (Flow.send flow "Hello World!")
           | Error err -> failwithf "%a" pp_error err
-      ]} *)
+      ]}
+
+      More precisely a {!key} is associated with the given {!scheduler} of
+     [Tuyau]. By this way, it's not possible to mis-use a key from an ASYNC
+     scheduler with [Tuyau_lwt.flow] for example. *)
 
   val name_of_key : 'edn key -> string
 
@@ -386,8 +408,8 @@ module type S = sig
             else failwith "Impossible to resolver mirage.io"
 
         let () = match flow_of_endpoint ~key:sockaddr mirage_io with
-          | Ok (flow, (module Flow)) ->
-            ignore (Flow.send flow "Hello World!")
+          | Ok flow ->
+            ignore (Tuyau.send flow "Hello World!")
           | Error err -> failwithf "%a" pp_error err
       ]} *)
 
@@ -495,6 +517,9 @@ module type S = sig
                          and type t = 't
                          and type flow = 'flow),
         [> error ]) result
+  (** [impl_of_service ~key svc] returns the full-defined implementation of a service
+     from a [key] and a witness of it [svc]. [key] and [svc] must be associated with
+     {!register_service}. Otherwise, we return an error. *)
 
   val impl_of_protocol
     :  key:'edn key
@@ -502,10 +527,46 @@ module type S = sig
     -> ((module PROTOCOL with type endpoint = 'edn
                           and type flow = 'flow),
         [> error ]) result
+  (** [impl_of_protocol ~key protocol] returns the full-defined implementation of a
+     protocol from a [key] and a witness of it [protocol]. [key] and [protocol] must be
+     associated with {!register_protocol}. Otherwise, we return an error. *)
 
   val impl_of_flow : 'flow Witness.protocol -> (module FLOW with type flow = 'flow)
+  (** [impl_of_flow protocol] returns a not-full-defined implementation of a protocol.
+     Despite {!impl_of_protocol}, the returned implementation does not allow to {i create}
+     a new flow from it. It does the usual computation {!recv}, {!send} and {!close}. *)
 
   val is : flow -> 'flow Witness.protocol -> 'flow option
+  (** [is flow protocol] tries to prove that the given flow {b comes from} [protocol].
+     By this fact, you are able to directly use it with your implementation. For example,
+     TLS implementation comes with few accessors such as [underlying] to fallback to the
+     {i underlying} protocol used with TLS.
+
+      To be able to use this function, you must prove that [flow] comes from, at least,
+     the TLS protocol implementation:
+
+      {[
+        type socket =
+          { ip : Ipaddr.V4.t
+          ; port : int
+          ; socket : Unix.socket }
+        type tls
+
+        val tcp_protocol : socket Tuyau.Witness.protocol
+        val tls_protocol : tls Tuyau.Witness.protocol
+
+        val underlying : tls -> Tuyau.flow
+        val dst : TCP.flow -> Ipaddr.V4.t * int
+
+        let abstract_dst : flow -> (Ippaddr.V4.t * int) option
+          = fun flow ->
+            let dst_of_tcp flow = match Tuyau.is flow tcp_protocol with
+              | Some { ip; port; _ } -> Some (ip, port)
+              | None -> None in
+            match Tuyau.is flow tls_protocol with
+            | Some with_tls -> dst_of_tcp (underlying with_tls)
+            | None -> None
+      ]}*)
 end
 
 (** {3 Composition.}
