@@ -16,14 +16,14 @@ let load_file filename =
 
 let cert =
   let open Rresult in
-  load_file (Fpath.v "cert.pem") >>= fun raw ->
+  load_file (Fpath.v "server.pem") >>= fun raw ->
   X509.Certificate.decode_pem raw
 
 let cert = Rresult.R.get_ok cert
 
 let private_key =
   let open Rresult in
-  load_file (Fpath.v "cert.key") >>= fun raw ->
+  load_file (Fpath.v "server.key") >>= fun raw ->
   X509.Private_key.decode_pem raw >>= fun (`RSA v) -> R.ok v
 
 let private_key = Rresult.R.get_ok private_key
@@ -31,7 +31,7 @@ let private_key = Rresult.R.get_ok private_key
 let tls_config =
   Tls.Config.server
     ~certificates:(`Single ([ cert ], private_key))
-    ~authenticator:X509.Authenticator.null
+    ~authenticator:(fun ~host:_ _ -> Ok None)
     ()
 
 open Tuyau_unix_tcp
@@ -56,17 +56,16 @@ let server () =
     Server.accept master
     |> R.reword_error (fun err -> R.msgf "%a" Server.pp_error err)
     >>| Tuyau_unix.abstract protocol
-    >>= fun (Tuyau_unix.Flow (socket, (module Flow))) ->
+    >>= fun flow ->
     let raw = Cstruct.create 0x1000 in
     let rec go () =
-      Flow.recv socket raw >>= function
+      Tuyau_unix.recv flow raw >>= function
       | `End_of_input ->
-        Flow.close socket
+        Tuyau_unix.close flow
       | `Input len ->
-        Flow.send socket (Cstruct.sub raw 0 len) >>= fun _len ->
+        Tuyau_unix.send flow (Cstruct.sub raw 0 len) >>= fun _len ->
         go () in
-    go () |> R.reword_error (fun err -> R.msgf "%a" Flow.pp_error err)
-    >>= fun () -> loop master in
+    go () >>= fun () -> loop master in
   loop master
 
 let resolver ~port domain =
@@ -75,13 +74,13 @@ let resolver ~port domain =
   then None
   else
     let inet_addr = h_addr_list.(0) in
-    let tls = Tls.Config.client ~authenticator:X509.Authenticator.null () in
+    let tls = Tls.Config.client ~authenticator:(fun ~host:_ _ -> Ok None) () in
     Some (Unix.ADDR_INET (inet_addr, port), tls)
 
 let client ?(port= 4242) domain_name =
   let open Rresult in
   let resolvers = Tuyau_unix.register_resolver ~key:tls_endpoint (resolver ~port) Tuyau.empty in
-  Tuyau_unix.flow resolvers domain_name >>= fun (Tuyau_unix.Flow (socket, (module Flow))) ->
+  Tuyau_unix.flow resolvers domain_name >>= fun flow ->
   let raw0 = Cstruct.create 0x1000 in
   let rec go () = match input_line stdin with
     | line ->
@@ -89,15 +88,15 @@ let client ?(port= 4242) domain_name =
         Cstruct.of_string
           ~allocator:(fun len -> if len > Cstruct.len raw0 then Fmt.invalid_arg "Input line too long." ; Cstruct.sub raw0 0 len)
           line in
-      Flow.send socket raw1 >>= fun _ ->
-      ( Flow.recv socket raw0 >>= function
-      | `End_of_input -> Flow.close socket
+      Tuyau_unix.send flow raw1 >>= fun _ ->
+      ( Tuyau_unix.recv flow raw0 >>= function
+      | `End_of_input -> Tuyau_unix.close flow
       | `Input bytes ->
         Fmt.epr "<~ %S.\n%!" Cstruct.(to_string (sub raw0 0 bytes)) ;
         go () )
     | exception End_of_file ->
-      Flow.close socket in
-  go () |> R.reword_error (fun err -> R.msgf "%a" Flow.pp_error err)
+      Tuyau_unix.close flow in
+  go ()
 
 let run () = match Sys.argv with
   | [| _; "server" |] -> server ()

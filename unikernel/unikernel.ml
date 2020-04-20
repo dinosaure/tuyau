@@ -39,7 +39,7 @@ module Make
     let tls =
       Tls.Config.server
         ~certificates:(`Single ([ cert_pem ], cert_key))
-        ~authenticator:X509.Authenticator.null
+        ~authenticator:(fun ~host:_ _ -> Ok None)
         () in
     let conf =
       { Tuyau_mirage_tcp.stack= stackv4
@@ -74,55 +74,51 @@ module Make
       Lwt.async (handle console flow) ; Lwt.pause () >>= go in
     go () >|= R.reword_error (fun err -> R.msgf "%a" Server.pp_error err)
 
-  let handler console (Tuyau_mirage.Flow (flow, (module Flow))) =
+  let handler console flow =
     let buf = Cstruct.create 4096 in
-    let reword_error = R.reword_error (fun err -> R.msgf "%a" Flow.pp_error err) in
 
     let rec fully_send raw =
-      Flow.send flow raw >>? fun len ->
+      Tuyau_mirage.send flow raw >>? fun len ->
       let raw = Cstruct.shift raw len in
       if Cstruct.len raw = 0
       then go ()
       else fully_send raw
 
     and go () =
-      Flow.recv flow buf >>? function
-      | `End_of_input -> Flow.close flow
+      Tuyau_mirage.recv flow buf >>? function
+      | `End_of_input -> Tuyau_mirage.close flow
       | `Input 1 ->
         if Cstruct.get_char buf 0 = '\004'
-        then Flow.close flow
+        then Tuyau_mirage.close flow
         else fully_send (Cstruct.sub buf 0 1)
       | `Input len -> fully_send (Cstruct.sub buf 0 len) in
     go () >>= function
-    | Ok () -> Flow.close flow >|= reword_error
+    | Ok () -> Tuyau_mirage.close flow
     | Error err ->
-      Flow.close flow >|= reword_error >>? fun () ->
-      Lwt.return (R.error_msgf "%a" Flow.pp_error err)
+      Tuyau_mirage.close flow
 
-  let pipe (Tuyau_mirage.Flow (flow0, (module Flow0)) as f0) (Tuyau_mirage.Flow (flow1, (module Flow1)) as f1) =
+  let pipe flow0 flow1 =
     let buf0 = Cstruct.create 0x1000 in
     let buf1 = Cstruct.create 0x1000 in
-    let reword0 = R.msgf "%a" Flow0.pp_error in
-    let reword1 = R.msgf "%a" Flow1.pp_error in
 
-    let rec fully_send (Tuyau_mirage.Flow (flow, (module Flow)) as f) raw =
+    let rec fully_send flow raw =
       if Cstruct.len raw = 0 then Lwt.return (Ok ())
-      else Flow.send flow raw >|= R.reword_error (R.msgf "%a" Flow.pp_error) >>? fun len ->
-        fully_send f (Cstruct.shift raw len)
+      else Tuyau_mirage.send flow raw >>? fun len ->
+        fully_send flow (Cstruct.shift raw len)
     and pong () =
-      Flow1.recv flow1 buf1 >|= R.reword_error reword1 >>? function
+      Tuyau_mirage.recv flow1 buf1 >>? function
       | `End_of_input ->
-        Flow1.close flow1 >|= R.reword_error reword1 >>? fun () ->
-        Flow0.close flow0 >|= R.reword_error reword0
+        Tuyau_mirage.close flow1 >>? fun () ->
+        Tuyau_mirage.close flow0
       | `Input len ->
-        fully_send f0 (Cstruct.sub buf1 0 len) >>? fun () -> ping ()
+        fully_send flow0 (Cstruct.sub buf1 0 len) >>? fun () -> ping ()
     and ping () =
-      Flow0.recv flow0 buf0 >|= R.reword_error reword0 >>? function
+      Tuyau_mirage.recv flow0 buf0 >>? function
       | `End_of_input ->
-        Flow0.close flow0 >|= R.reword_error reword0 >>? fun () ->
-        Flow1.close flow1 >|= R.reword_error reword1
+        Tuyau_mirage.close flow0 >>? fun () ->
+        Tuyau_mirage.close flow1
       | `Input len ->
-        fully_send f1 (Cstruct.sub buf0 0 len) >>? fun () -> pong () in
+        fully_send flow1 (Cstruct.sub buf0 0 len) >>? fun () -> pong () in
     ping ()
 
   let tls_pipe console store stack resolvers ~port server =
@@ -137,7 +133,7 @@ module Make
     let tls =
       Tls.Config.server
         ~certificates:(`Single ([ cert_pem ], cert_key))
-        ~authenticator:X509.Authenticator.null
+        ~authenticator:(fun ~host:_ _ -> Ok None)
         () in
     let conf =
       { Tuyau_mirage_tcp.stack
@@ -146,12 +142,12 @@ module Make
       ; port } in
     Tuyau_mirage.impl_of_service ~key:tls_configuration tls_service >? fun (module Server) ->
     Tuyau_mirage.serve ~key:tls_configuration (conf, tls) ~service:tls_service >>? fun (t, protocol) ->
-    let handle console (Tuyau_mirage.Flow (flow0, (module Flow0)) as f0) () =
-      ( Tuyau_mirage.flow resolvers server >>? fun f1 ->
-        pipe f0 f1 ) >>= function
+    let handle console flow0 () =
+      ( Tuyau_mirage.flow resolvers server >>? fun flow1 ->
+        pipe flow0 flow1 ) >>= function
       | Ok () -> Lwt.return ()
       | Error err ->
-        Flow0.close flow0 >|= R.reword_error (R.msgf "%a" Flow0.pp_error) >>= function
+        Tuyau_mirage.close flow0 >>= function
         | Ok () -> log console ">>> %a." Tuyau_mirage.pp_error err
         | Error (`Msg err) -> log console ">>> %s." err in
     let rec go () =
@@ -165,7 +161,7 @@ module Make
     match tls_server with
     | Some tls_server when Domain_name.equal tls_domain_name domain_name ->
       let conf = { Tuyau_mirage_tcp.stack; keepalive= None; nodelay= false; ip= tls_server; port= 9292; } in
-      let tls = Tls.Config.client ~authenticator:X509.Authenticator.null () in
+      let tls = Tls.Config.client ~authenticator:(fun ~host:_ _ -> Ok None) () in
       Lwt.return (Some (conf, tls))
     | _ -> Lwt.return None
 

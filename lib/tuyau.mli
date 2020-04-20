@@ -181,7 +181,7 @@ module type S = sig
           | _ -> failwith "Flow.recv"
       ]}
   *)
-  type flow = Flow : 'flow * (module FLOW with type flow = 'flow) -> flow
+  type flow
 
   val recv : flow -> input -> (int Sigs.or_end_of_input, [> `Msg of string ]) result s
   val send : flow -> output -> (int, [> `Msg of string ]) result s
@@ -504,6 +504,8 @@ module type S = sig
         [> error ]) result
 
   val impl_of_flow : 'flow Witness.protocol -> (module FLOW with type flow = 'flow)
+
+  val is : flow -> 'flow Witness.protocol -> 'flow option
 end
 
 (** {3 Composition.}
