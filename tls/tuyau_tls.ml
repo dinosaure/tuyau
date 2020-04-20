@@ -1,4 +1,4 @@
-module Ke = Ke.Rke.Weighted
+module Ke = Ke.Rke
 module Sigs = Tuyau.Sigs
 
 module Make
@@ -28,6 +28,9 @@ module Make
     ; queue : (char, Bigarray.int8_unsigned_elt) Ke.t }
 
   let underlying { flow; _ } = flow
+  let handshake { tls; _ } = match tls with
+    | Some tls -> Tls.Engine.handshake_in_progress tls
+    | None -> false
 
   module Make_protocol
       (Flow : Sigs.PROTOCOL with type input = Tuyau.input
@@ -76,26 +79,33 @@ module Make
     let queue_wr_opt queue = function
       | None -> return (Ok ())
       | Some raw ->
-        match Ke.N.push queue ~blit ~length:Cstruct.len ~off:0 raw with
-        | Some _ -> return (Ok ())
-        | None -> return (Error `Full)
+        Log.debug (fun m -> m "Fill the queue with %d byte(s)." (Cstruct.len raw)) ;
+        Ke.N.push queue ~blit ~length:Cstruct.len ~off:0 raw ;
+        return (Ok ())
 
     let handle_tls
       : Tls.Engine.state -> (char, Bigarray.int8_unsigned_elt) Ke.t -> Flow.flow -> Cstruct.t -> (Tls.Engine.state option, error) result Scheduler.t
       = fun tls queue flow raw ->
         match Tls.Engine.handle_tls tls raw with
         | `Fail (failure, `Response resp) ->
+          Log.debug (fun m -> m "|- TLS state: Fail") ;
           flow_wr_opt flow (Some resp) >>? fun () ->
           return (Error (`TLS failure))
         | `Ok (`Alert _alert, `Response resp, `Data data) ->
+          Log.debug (fun m -> m "|- TLS state: Alert") ;
           flow_wr_opt flow resp >>? fun () ->
           queue_wr_opt queue data >>? fun () ->
           return (Ok (Some tls))
         | `Ok (`Eof, `Response resp, `Data data) ->
+          Log.debug (fun m -> m "|- TLS state: EOF") ;
           flow_wr_opt flow resp >>? fun () ->
           queue_wr_opt queue data >>? fun () ->
           return (Ok None)
         | `Ok (`Ok tls, `Response resp, `Data data) ->
+          (* XXX(dinosaure): it seems that decoding TLS inputs can produce
+             something bigger than expected. For example, decoding 4096 bytes
+             can produce 4119 byte(s). *)
+          Log.debug (fun m -> m "|- TLS state: Ok") ;
           flow_wr_opt flow resp >>? fun () ->
           queue_wr_opt queue data >>? fun () ->
           return (Ok (Some tls))
@@ -109,6 +119,7 @@ module Make
             handle_tls tls queue flow raw1
           | false ->
             assert (Tls.Engine.handshake_in_progress tls = true) ;
+            Log.debug (fun m -> m "Process TLS handshake.") ;
 
             (* XXX(dinosaure): assertion, [Tls.Engine.handle_tls] consumes all
                bytes of [raw1] and [raw1] is physically a subset of [raw0] (or
@@ -116,6 +127,7 @@ module Make
 
             match Tls.Engine.handle_tls tls raw1 with
             | `Ok (`Ok tls, `Response resp, `Data data) ->
+              Log.debug (fun m -> m "-- TLS state: OK") ;
               flow_wr_opt flow resp >>? fun () ->
               queue_wr_opt queue data >>? fun () ->
               if Tls.Engine.handshake_in_progress tls
@@ -127,15 +139,18 @@ module Make
                   let uid = Hashtbl.hash (Cstruct.to_string (Cstruct.sub raw0 0 len)) in
                   Log.debug (fun m -> m "<~ [%04x] Got %d bytes (handshake in progress: true)." uid len) ;
                   go tls (Cstruct.sub raw0 0 len) )
-              else return (Ok (Some tls))
+              else ( Log.debug (fun m -> m "Handshake is done.") ; return (Ok (Some tls)) )
             | `Ok (`Eof, `Response resp, `Data data) ->
+              Log.debug (fun m -> m "-- TLS state: EOF") ;
               flow_wr_opt flow resp >>? fun () ->
               queue_wr_opt queue data >>? fun () ->
               return (Ok None)
             | `Fail (failure, `Response resp) ->
+              Log.debug (fun m -> m "-- TLS state: Fail") ;
               flow_wr_opt flow (Some resp) >>? fun () ->
               return (Error (`TLS failure))
             | `Ok (`Alert _alert, `Response resp, `Data data) ->
+              Log.debug (fun m -> m "-- TLS state: Alert") ;
               flow_wr_opt flow resp >>? fun () ->
               queue_wr_opt queue data >>? fun () ->
               return (Ok (Some tls))
@@ -144,9 +159,10 @@ module Make
     let flow (edn, config) =
       Flow.flow edn >>| reword_error flow_error >>? fun flow ->
       let raw = Cstruct.create 0x1000 in
-      let queue, _ = Ke.create ~capacity:0x1000 Bigarray.Char in
+      let queue = Ke.create ~capacity:0x1000 Bigarray.Char in
       let tls, buf = Tls.Engine.client config in
       let rec go buf =
+        Log.debug (fun m -> m "Start handshake.") ;
         Flow.send flow buf >>| reword_error flow_error >>? fun len ->
         let buf = Cstruct.shift buf len in
         if Cstruct.len buf = 0
@@ -154,7 +170,12 @@ module Make
         else go buf in
       go buf
 
+    let blit src src_off dst dst_off len =
+      let dst = Cstruct.to_bigarray dst in
+      Bigstringaf.blit src ~src_off dst ~dst_off ~len
+
     let rec recv t raw =
+      Log.debug (fun m -> m "<~ Start to receive.") ;
       match Ke.N.peek t.queue with
       | [] ->
         Log.debug (fun m -> m "<~ TLS queue is empty.") ;
@@ -175,24 +196,19 @@ module Make
                 then handle_handshake tls t.queue t.flow
                 else handle_tls tls t.queue t.flow in
               let uid = Hashtbl.hash (Cstruct.to_string (Cstruct.sub t.raw 0 len)) in
-              Log.debug (fun m -> m "<~ [%04x] Got %d bytes (handshake in progress: %b)." uid len (Tls.Engine.handshake_in_progress tls)) ;
+              Log.debug (fun m -> m "<~ [%04x] Got %d bytes (handshake in progress: %b)."
+                            uid len (Tls.Engine.handshake_in_progress tls)) ;
               handle (Cstruct.sub t.raw 0 len) >>? fun tls ->
               t.tls <- tls ; recv t raw )
-      | lst ->
+      | _ ->
         let max = Cstruct.len raw in
-        let rec go dst_off = function
-          | [] ->
-            Ke.N.shift_exn t.queue dst_off ;
-            return (Ok (`Input dst_off))
-          | src :: rest ->
-            let len = min (Bigstringaf.length src) (max - dst_off) in
-            Bigstringaf.blit src ~src_off:0 (Cstruct.to_bigarray raw) ~dst_off:0 ~len ;
-            if dst_off + len = max
-            then ( Ke.N.shift_exn t.queue max ; return (Ok (`Input max)) )
-            else go (dst_off + len) rest in
-        go 0 lst
+        let len = min (Ke.length t.queue) max in
+        Ke.N.keep_exn t.queue ~blit ~length:Cstruct.len ~off:0 ~len raw ;
+        Ke.N.shift_exn t.queue len ;
+        return (Ok (`Input len))
 
     let rec send t raw =
+      Log.debug (fun m -> m "~> Start to send.") ;
       match t.tls with
       | None -> return (Ok 0)
       | Some tls when Tls.Engine.can_handle_appdata tls ->
@@ -208,8 +224,12 @@ module Make
         | `End_of_input ->
           t.tls <- None ; return (Ok 0)
         | `Input len ->
-          handle_handshake tls t.queue t.flow (Cstruct.sub t.raw 0 len) >>? fun tls ->
-          t.tls <- tls ; send t raw
+          let res = handle_handshake tls t.queue t.flow (Cstruct.sub t.raw 0 len) in
+          res >>= function
+            | Ok tls -> t.tls <- tls ; send t raw
+            | Error _ as err ->
+              Log.err (fun m -> m "[-] Got an error during handshake.") ;
+              return err
 
     let close t =
       match t.tls with
@@ -218,6 +238,7 @@ module Make
       | Some tls ->
         let _tls, resp = Tls.Engine.send_close_notify tls in
         t.tls <- None ;
+        Log.debug (fun m -> m "!- Close the connection.") ;
         flow_wr_opt t.flow (Some resp) >>? fun () ->
         Flow.close t.flow >>| reword_error flow_error >>? fun () ->
         return (Ok ())
@@ -264,7 +285,7 @@ module Make
       Service.accept service >>| reword_error service_error >>? fun flow ->
       let tls = Tls.Engine.server tls in
       let raw = Cstruct.create 0x1000 in
-      let queue, _ = Ke.create ~capacity:0x1000 Bigarray.Char in
+      let queue = Ke.create ~capacity:0x1000 Bigarray.Char in
       Log.info (fun m -> m "A TLS flow is coming.") ;
       return (Ok { tls= Some tls; raw; queue; flow; })
 
