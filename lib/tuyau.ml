@@ -46,7 +46,7 @@ module type S = sig
      and type output = output
      and type +'a s = 'a s
 
-  type flow = Flow : 'flow * (module FLOW with type flow = 'flow) -> flow
+  type flow
 
   val recv : flow -> input -> (int Sigs.or_end_of_input, [> `Msg of string ]) result s
   val send : flow -> output -> (int, [> `Msg of string ]) result s
@@ -128,6 +128,8 @@ module type S = sig
         [> error ]) result
 
   val impl_of_flow : 'flow Witness.protocol -> (module FLOW with type flow = 'flow)
+
+  val is : flow -> 'flow Witness.protocol -> 'flow option
 end
 
 module Make
@@ -175,8 +177,6 @@ module Make
      and type output = output
      and type +'a s = 'a s
 
-  type flow =
-    Flow : 'flow * (module FLOW with type flow = 'flow) -> flow
   type 'edn key = ('edn * scheduler) Map.key
   type 'edn resolver = [ `host ] Domain_name.t -> 'edn option s
 
@@ -185,6 +185,9 @@ module Make
       Protocol : 'edn key * ('edn, 'flow) protocol -> 'flow t
   end
   module Ptr = E0.Make (B)
+
+  type flow = Ptr.t
+
   module A = struct
     type 't t =
       Service : 'edn key * ('edn, 't, 'flow) service * 'flow Ptr.s -> ('t * 'flow) t
@@ -203,17 +206,23 @@ module Make
     | Ok x -> f x
     | Error err -> return (Error err)
 
-  let recv (Flow (flow, (module Flow))) input = Flow.recv flow input >>| function
+  let recv flow input =
+    let Ptr.Value (flow, Protocol (_, (module Protocol))) = Ptr.prj flow in
+    Protocol.recv flow input >>| function
     | Ok _ as v -> v
-    | Error err -> Error (`Msg (strf "%a" Flow.pp_error err))
+    | Error err -> Error (`Msg (strf "%a" Protocol.pp_error err))
 
-  let send (Flow (flow, (module Flow))) output = Flow.send flow output >>| function
+  let send flow output =
+    let Ptr.Value (flow, Protocol (_, (module Protocol))) = Ptr.prj flow in
+    Protocol.send flow output >>| function
     | Ok _ as v -> v
-    | Error err -> Error (`Msg (strf "%a" Flow.pp_error err))
+    | Error err -> Error (`Msg (strf "%a" Protocol.pp_error err))
 
-  let close (Flow (flow, (module Flow))) = Flow.close flow >>| function
+  let close flow =
+    let Ptr.Value (flow, Protocol (_, (module Protocol))) = Ptr.prj flow in
+    Protocol.close flow >>| function
     | Ok _ as v -> v
-    | Error err -> Error (`Msg (strf "%a" Flow.pp_error err))
+    | Error err -> Error (`Msg (strf "%a" Protocol.pp_error err))
 
   let key name = Map.Key.create name
   let name_of_key : type edn. edn key -> string = fun key -> (Map.Key.info key)
@@ -260,12 +269,12 @@ module Make
     = fun ~key edn ->
       let rec go = function
         | [] -> return (Error `Not_found)
-        | Ptr.Key (Protocol (k, (module Protocol))) :: r ->
+        | Ptr.Key (Protocol (k, (module Protocol)), ctor) :: r ->
           match Map.Key.(key == k) with
           | None -> go r
           | Some E1.Refl.Refl ->
             Protocol.flow edn >>= function
-            | Ok flow -> return (Ok (Flow (flow, (module Protocol))))
+            | Ok flow -> return (Ok (ctor flow))
             | Error _err -> go r in
       go (Ptr.bindings ())
 
@@ -289,6 +298,7 @@ module Make
   type endpoint = Endpoint : 'edn key * 'edn -> endpoint
 
   module Refl = struct type ('a, 'b) t = Refl : ('a, 'a) t end
+
   let scheduler
     : type s. s witness -> (s, scheduler) Refl.t option
     = function
@@ -327,9 +337,7 @@ module Make
 
   let abstract
     : type v. v Witness.protocol -> v -> flow
-    = fun (module P) flow ->
-      let Ptr.Value (flow, Protocol (_, (module Protocol))) = Ptr.prj (P.T flow) in
-      Flow (flow, (module Protocol))
+    = fun (module P) flow -> P.T flow
 
   let flow
     : type edn f.
@@ -360,7 +368,7 @@ module Make
             | Ok flow ->
               let module P = (val protocol) in
               let Protocol (_, (module Protocol)) = P.witness in
-              return (Ok (Flow (flow, (module Protocol))))
+              return (Ok (P.T flow))
             | Error _err -> go r in
         go l
       | Some key, Some protocol ->
@@ -374,7 +382,7 @@ module Make
             | Some edn -> flow_of_protocol ~key edn ~protocol >>? fun flow ->
               let module P = (val protocol) in
               let Protocol (_, (module Protocol)) = P.witness in
-              return (Ok (Flow (flow, (module Protocol))))
+              return (Ok (P.T flow))
             | None -> return (Error `Unresolved)
 
   let serve
@@ -426,4 +434,9 @@ module Make
     = fun (module P) ->
       let Protocol (_, (module Protocol)) = P.witness in
       (module Protocol)
+
+  let is
+    : type v. flow -> v Witness.protocol -> v option
+    = fun flow witness ->
+      Ptr.extract flow witness
 end
