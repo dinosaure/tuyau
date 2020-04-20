@@ -3,6 +3,7 @@ open Tuyau_mirage
 type 'flow protocol_with_tls
 
 val underlying : 'flow protocol_with_tls -> 'flow
+val handshake : 'flow protocol_with_tls -> bool
 
 val protocol_with_tls :
   key:'edn key ->
